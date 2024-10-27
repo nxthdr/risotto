@@ -1,0 +1,38 @@
+services:
+  bird_10:
+    build: ./bird
+    user: root
+    cap_add:
+      - NET_ADMIN
+      - NET_BROADCAST
+      - NET_RAW
+    volumes:
+      - ./config/bird_10.conf:/etc/bird/bird.conf:ro
+    networks:
+      testbed:
+        ipv4_address: 10.0.0.10
+  bird_20:
+    build: ./bird
+    user: root
+    cap_add:
+      - NET_ADMIN
+      - NET_BROADCAST
+      - NET_RAW
+    volumes:
+      - ./config/bird_20.conf:/etc/bird/bird.conf:ro
+    networks:
+      testbed:
+        ipv4_address: 10.0.0.20
+  risotto:
+    build: ..
+    networks:
+      testbed:
+        ipv4_address: 10.0.0.100
+
+networks:
+  testbed:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.0.0.0/24
+          gateway: 10.0.0.1

@@ -1,0 +1,17 @@
+[package]
+name = "risotto"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+axum = "0.7.5"
+bgpkit-parser = "0.10.9"
+bytes = "1.6.0"
+chrono = "0.4.38"
+hex = "0.4.3"
+ipnet = "2.9.0"
+prefix-trie = "0.3.0"
+serde = { version = "1.0.213", features = ["derive"] }
+tokio = { version = "1.37.0", features = ["full"] }
