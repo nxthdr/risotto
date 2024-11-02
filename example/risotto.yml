@@ -1,0 +1,12 @@
+api:
+  address: '::'
+  port: 3000
+
+bmp:
+  address: '::'
+  port: 4000
+
+kafka:
+  host: kafka.example.com
+  port: 9000
+  topic: bgp-updates

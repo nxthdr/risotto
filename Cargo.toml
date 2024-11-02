@@ -10,6 +10,8 @@ axum = "0.7.5"
 bgpkit-parser = "0.10.9"
 bytes = "1.6.0"
 chrono = "0.4.38"
+clap = { version = "4.5.20", features = ["derive"] }
+config = "0.14.1"
 hex = "0.4.3"
 ipnet = "2.9.0"
 kafka = "0.10.0"
