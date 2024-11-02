@@ -1,9 +1,9 @@
 use axum::{extract::State, routing::get, Json, Router};
-use bgpkit_parser::models::{AsPath, AsPathSegment, MetaCommunity};
 use core::net::{IpAddr, Ipv4Addr};
 use serde::{Deserialize, Serialize};
 
 use crate::db::DB;
+use crate::update::{construct_as_path, construct_communities};
 
 #[derive(Debug, Serialize, Deserialize)]
 struct APIRouter {
@@ -31,43 +31,6 @@ struct APIUpdate {
 
 pub fn app(db: DB) -> Router {
     Router::new().route("/", get(root).with_state(db))
-}
-
-fn construct_as_path(path: Option<AsPath>) -> Vec<u32> {
-    match path {
-        Some(mut path) => {
-            let mut contructed_path: Vec<u32> = Vec::new();
-            path.dedup_coalesce();
-            for segment in path.into_segments_iter() {
-                match segment {
-                    AsPathSegment::AsSequence(dedup_asns) => {
-                        for asn in dedup_asns {
-                            contructed_path.push(asn.to_u32());
-                        }
-                    }
-                    _ => (),
-                }
-            }
-            contructed_path
-        }
-        None => Vec::new(),
-    }
-}
-
-fn construct_communities(communities: Vec<MetaCommunity>) -> Vec<(u32, u16)> {
-    let mut constructed_communities = Vec::new();
-    for community in communities {
-        match community {
-            MetaCommunity::Plain(community) => match community {
-                bgpkit_parser::models::Community::Custom(asn, value) => {
-                    constructed_communities.push((asn.to_u32(), value));
-                }
-                _ => (), // TODO
-            },
-            _ => (), // TODO
-        }
-    }
-    constructed_communities
 }
 
 fn format(db: DB) -> Vec<APIRouter> {

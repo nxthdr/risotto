@@ -8,8 +8,9 @@ use tokio::io::AsyncReadExt;
 use tokio::net::TcpStream;
 
 use crate::db::DB;
+use crate::pipeline::send_to_kafka;
 use crate::router::new_router;
-use crate::update::decode_updates;
+use crate::update::{decode_updates, format_update};
 
 pub async fn unmarshal_bmp_packet(socket: &mut TcpStream) -> io::Result<Option<BmpMessage>> {
     // Get minimal packet length to get how many bytes to remove from the socket
@@ -81,9 +82,11 @@ pub async fn handle(socket: &mut TcpStream, db: DB) {
                 }
             }
 
-            // TODO: Handle streaming pipeline configuration (stdout, CSV file, Kafka, ...)
+            // TODO: Handle multiple event pipelines (stdout, CSV file, Kafka, ...)
             for update in legitimate_updates {
+                let update = format_update(&router, &peer, &update);
                 println!("{:?}", update);
+                send_to_kafka("broker.nxthdr.dev:9092", "bgp-updates", update.as_bytes());
             }
         }
         BmpMessageBody::PeerDownNotification(_) => {
@@ -102,9 +105,11 @@ pub async fn handle(socket: &mut TcpStream, db: DB) {
             // And we then update the internal state
             router.remove_peer(&peer);
 
-            // TODO: Handle streaming pipeline configuration (stdout, CSV file, Kafka, ...)
+            // TODO: Handle multiple event pipelines (stdout, CSV file, Kafka, ...)
             for update in synthetic_updates {
+                let update = format_update(&router, &peer, &update);
                 println!("{:?}", update);
+                send_to_kafka("broker.nxthdr.dev:9092", "bgp-updates", update.as_bytes());
             }
         }
         _ => (),

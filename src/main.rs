@@ -1,6 +1,7 @@
 mod api;
 mod bmp;
 mod db;
+mod pipeline;
 mod router;
 mod update;
 

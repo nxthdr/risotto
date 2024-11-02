@@ -32,6 +32,7 @@ services:
 networks:
   testbed:
     driver: bridge
+    enable_ipv6: true
     ipam:
       config:
         - subnet: 10.0.0.0/24
