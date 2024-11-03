@@ -121,7 +121,7 @@ fn map_to_ipv6(ip: IpAddr) -> IpAddr {
 }
 
 // Returns a CSV line corresponding to this schema
-// router_addr,router_port,peer_addr,peer_bgp_id,peer_asn,prefix_addr,prefix_len,origin,announced,synthetic,path,communities,timestamp
+// timestamp,router_addr,router_port,peer_addr,peer_bgp_id,peer_asn,prefix_addr,prefix_len,origin,announced,synthetic,path,communities
 pub fn format_update(router: &Router, peer: &Peer, update: &Update) -> String {
     let as_path_str = construct_as_path(update.path.clone())
         .iter()
@@ -138,6 +138,7 @@ pub fn format_update(router: &Router, peer: &Peer, update: &Update) -> String {
     let communities_str = format!("\"[{}]\"", communities_str);
 
     let row: Vec<String> = vec![
+        update.timestamp.timestamp_millis().to_string(),
         map_to_ipv6(router.addr).to_string(),
         router.port.to_string(),
         map_to_ipv6(peer.peer_address).to_string(),
@@ -150,7 +151,6 @@ pub fn format_update(router: &Router, peer: &Peer, update: &Update) -> String {
         update.synthetic.to_string(),
         as_path_str,
         communities_str,
-        update.timestamp.timestamp().to_string(),
     ];
 
     return row.join(",");
