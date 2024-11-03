@@ -21,6 +21,7 @@ pub fn decode_updates(message: RouteMonitoring) -> Option<Vec<Update>> {
 
     match message.bgp_message {
         bgpkit_parser::models::BgpMessage::Update(bgp_update) => {
+            // https://datatracker.ietf.org/doc/html/rfc4271
             let mut prefixes_to_update = Vec::new();
             for prefix in bgp_update.announced_prefixes {
                 prefixes_to_update.push((prefix, true));
@@ -29,13 +30,33 @@ pub fn decode_updates(message: RouteMonitoring) -> Option<Vec<Update>> {
                 prefixes_to_update.push((prefix, false));
             }
 
+            // https://datatracker.ietf.org/doc/html/rfc4760
             let attributes = bgp_update.attributes;
+            match attributes.get_reachable_nlri() {
+                Some(nlri) => {
+                    for prefix in &nlri.prefixes {
+                        prefixes_to_update.push((*prefix, true));
+                    }
+                }
+                None => (),
+            }
+            match attributes.get_unreachable_nlri() {
+                Some(nlri) => {
+                    for prefix in &nlri.prefixes {
+                        prefixes_to_update.push((*prefix, false));
+                    }
+                }
+                None => (),
+            }
+
+            // Get the other attributes
             let origin = attributes.origin();
             let path = match attributes.as_path() {
                 Some(path) => Some(path.clone()),
                 None => None,
             };
             let communities: Vec<MetaCommunity> = attributes.iter_communities().collect();
+
             for (prefix, announced) in prefixes_to_update {
                 updates.push(Update {
                     prefix: prefix,
