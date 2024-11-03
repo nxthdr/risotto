@@ -7,7 +7,7 @@ services:
       - NET_BROADCAST
       - NET_RAW
     volumes:
-      - ./config/bird_10.conf:/etc/bird/bird.conf:ro
+      - ./config/bird/bird_10.conf:/etc/bird/bird.conf:ro
     networks:
       testbed:
         ipv4_address: 10.0.0.10
@@ -19,12 +19,15 @@ services:
       - NET_BROADCAST
       - NET_RAW
     volumes:
-      - ./config/bird_20.conf:/etc/bird/bird.conf:ro
+      - ./config/bird/bird_20.conf:/etc/bird/bird.conf:ro
     networks:
       testbed:
         ipv4_address: 10.0.0.20
   risotto:
     build: ..
+    command: --debug --config /config/risotto
+    volumes:
+      - ./config/risotto/risotto.yml:/config/risotto.yml
     networks:
       testbed:
         ipv4_address: 10.0.0.100

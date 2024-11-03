@@ -4,6 +4,7 @@ use bgpkit_parser::parser::bmp::messages::{BmpMessage, BmpMessageBody};
 use bytes::Bytes;
 use chrono::Utc;
 use config::Config;
+use log::debug;
 use std::io;
 use tokio::io::AsyncReadExt;
 use tokio::net::TcpStream;
@@ -75,11 +76,13 @@ pub async fn handle(socket: &mut TcpStream, db: DB, settings: Config) {
         .or_insert_with(|| new_router(router_ip, router_port));
 
     match message.message_body {
-        BmpMessageBody::PeerUpNotification(_) => {
+        BmpMessageBody::PeerUpNotification(body) => {
+            debug!("PEER_UP_NOTIFICATION - {:?}", body);
             // Simply add the peer if we did not see it before
             router.add_peer(&peer);
         }
         BmpMessageBody::RouteMonitoring(body) => {
+            debug!("ROUTE_MONITORING - {:?}", body);
             let potential_updates = decode_updates(body).unwrap_or(Vec::new());
 
             let mut legitimate_updates = Vec::new();
@@ -93,11 +96,12 @@ pub async fn handle(socket: &mut TcpStream, db: DB, settings: Config) {
             // TODO: Handle multiple event pipelines (stdout, CSV file, Kafka, ...)
             for update in legitimate_updates {
                 let update = format_update(&router, &peer, &update);
-                println!("{:?}", update);
+                debug!("UPDATE - {:?}", update);
                 send_to_kafka(&kafka_host, &kafka_topic, update.as_bytes());
             }
         }
-        BmpMessageBody::PeerDownNotification(_) => {
+        BmpMessageBody::PeerDownNotification(body) => {
+            debug!("PEER_DOWN_NOTIFICATION - {:?}", body);
             // Remove the peer and the associated prefixes
             // To do so, we start by emiting synthetic withdraw updates
             let mut synthetic_updates = Vec::new();
@@ -116,7 +120,7 @@ pub async fn handle(socket: &mut TcpStream, db: DB, settings: Config) {
             // TODO: Handle multiple event pipelines (stdout, CSV file, Kafka, ...)
             for update in synthetic_updates {
                 let update = format_update(&router, &peer, &update);
-                println!("{:?}", update);
+                debug!("UPDATE - {:?}", update);
                 send_to_kafka(&kafka_host, &kafka_topic, update.as_bytes());
             }
         }

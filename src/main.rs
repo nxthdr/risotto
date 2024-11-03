@@ -6,18 +6,55 @@ mod router;
 mod settings;
 mod update;
 
+use chrono::Local;
 use clap::Parser;
 use config::Config;
+use env_logger::Builder;
+use log::debug;
+use log::LevelFilter;
+use std::io::Write;
 use tokio::net::TcpListener;
 
 use crate::db::DB;
+
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+struct CLI {
+    #[arg(short, long)]
+    config: String,
+
+    #[arg(short, long)]
+    debug: bool,
+}
+
+fn set_logging(cli: &CLI) {
+    Builder::new()
+        .format(|buf, record| {
+            writeln!(
+                buf,
+                "{} [{}] - {}",
+                Local::now().format("%Y-%m-%dT%H:%M:%S"),
+                record.level(),
+                record.args()
+            )
+        })
+        .filter(
+            None,
+            if cli.debug {
+                LevelFilter::Debug
+            } else {
+                LevelFilter::Info
+            },
+        )
+        .init();
+}
 
 async fn api_handler(settings: Config, db: DB) {
     let address = settings.get_string("api.address").unwrap();
     let port = settings.get_int("api.port").unwrap();
     let host = settings::host(address, port, false);
 
-    println!("Binding API listener to {}", host);
+    debug!("Binding API listener to {}", host);
 
     let api_listener = TcpListener::bind(host).await.unwrap();
     let app = api::app(db.clone());
@@ -30,7 +67,7 @@ async fn bmp_handler(settings: Config, db: DB) {
     let port = settings.get_int("bmp.port").unwrap();
     let host = settings::host(address, port, false);
 
-    println!("Binding BMP listener to {}", host);
+    debug!("Binding BMP listener to {}", host);
 
     let bmp_listener = TcpListener::bind(host).await.unwrap();
     loop {
@@ -45,13 +82,6 @@ async fn bmp_handler(settings: Config, db: DB) {
     }
 }
 
-#[derive(Parser, Debug)]
-#[command(version, about, long_about = None)]
-struct CLI {
-    #[arg(short, long)]
-    config: String,
-}
-
 #[tokio::main]
 async fn main() {
     let cli = CLI::parse();
@@ -63,6 +93,8 @@ async fn main() {
         .unwrap();
 
     let db = db::new_db().await;
+
+    set_logging(&cli);
 
     let api_handler = tokio::spawn(api_handler(settings.clone(), db.clone()));
     let bmp_handler = tokio::spawn(bmp_handler(settings.clone(), db.clone()));

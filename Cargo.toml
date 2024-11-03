@@ -12,9 +12,11 @@ bytes = "1.6.0"
 chrono = "0.4.38"
 clap = { version = "4.5.20", features = ["derive"] }
 config = "0.14.1"
+env_logger = "0.11.5"
 hex = "0.4.3"
 ipnet = "2.9.0"
 kafka = "0.10.0"
+log = "0.4.22"
 prefix-trie = "0.3.0"
 serde = { version = "1.0.213", features = ["derive"] }
 tokio = { version = "1.37.0", features = ["full"] }
