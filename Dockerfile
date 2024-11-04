@@ -2,11 +2,15 @@ FROM rust:latest AS builder
 
 WORKDIR /app
 
-COPY ./ ./
+COPY . .
 
 RUN cargo build --release
 
-FROM rust:latest
+FROM debian:stable-slim
+
+RUN apt-get update \
+    && apt-get install -y openssl \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /app/target/release/risotto /app/risotto
 
