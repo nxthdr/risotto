@@ -11,11 +11,12 @@ use clap::Parser;
 use config::Config;
 use env_logger::Builder;
 use log::debug;
-use log::LevelFilter;
 use std::error::Error;
 use std::io::Write;
+use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio::try_join;
+use tokio_graceful::Shutdown;
 
 use crate::db::DB;
 
@@ -25,17 +26,11 @@ struct CLI {
     #[arg(short, long)]
     config: String,
 
-    #[arg(short, long)]
-    debug: bool,
+    #[command(flatten)]
+    verbose: clap_verbosity_flag::Verbosity,
 }
 
 fn set_logging(cli: &CLI) {
-    let level_filter = if cli.debug {
-        LevelFilter::Debug
-    } else {
-        LevelFilter::Info
-    };
-
     Builder::new()
         .format(|buf, record| {
             writeln!(
@@ -46,7 +41,9 @@ fn set_logging(cli: &CLI) {
                 record.args()
             )
         })
-        .filter(None, level_filter)
+        .filter(Some("bgpkit_parser"), log::LevelFilter::Off)
+        .filter(Some("tokio_graceful"), log::LevelFilter::Off)
+        .filter_level(cli.verbose.log_level_filter())
         .init();
 }
 
@@ -63,7 +60,7 @@ async fn api_handler(settings: Config, db: DB) {
     let port = settings.get_int("api.port").unwrap();
     let host = settings::host(address, port, false);
 
-    debug!("Binding API listener to {}", host);
+    debug!("binding API listener to {}", host);
 
     let api_listener = TcpListener::bind(host).await.unwrap();
     let app = api::app(db.clone());
@@ -76,7 +73,7 @@ async fn bmp_handler(settings: Config, db: DB) {
     let port = settings.get_int("bmp.port").unwrap();
     let host = settings::host(address, port, false);
 
-    debug!("Binding BMP listener to {}", host);
+    debug!("binding BMP listener to {}", host);
 
     let bmp_listener = TcpListener::bind(host).await.unwrap();
     loop {
@@ -97,12 +94,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let settings = load_settings(&cli.config);
     let db = db::new_db().await?;
+    let shutdown: Shutdown = Shutdown::default();
 
     set_logging(&cli);
 
-    let api_handler = tokio::spawn(api_handler(settings.clone(), db.clone()));
-    let bmp_handler = tokio::spawn(bmp_handler(settings.clone(), db.clone()));
+    let api_handler = shutdown.spawn_task(api_handler(settings.clone(), db.clone()));
+    let bmp_handler = shutdown.spawn_task(bmp_handler(settings.clone(), db.clone()));
 
+    shutdown.shutdown_with_limit(Duration::from_secs(1)).await?;
     try_join!(api_handler, bmp_handler)?;
 
     Ok(())
