@@ -3,7 +3,6 @@ use core::net::{IpAddr, Ipv4Addr};
 use serde::{Deserialize, Serialize};
 
 use crate::db::DB;
-use crate::update::{construct_as_path, construct_communities};
 
 #[derive(Debug, Serialize, Deserialize)]
 struct APIRouter {
@@ -17,16 +16,14 @@ struct APIPeers {
     peer_addr: IpAddr,
     peer_bgp_id: Ipv4Addr,
     peer_asn: u32,
-    updates: Vec<APIUpdate>,
+    ipv4: APIUpdate,
+    ipv6: APIUpdate,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 struct APIUpdate {
-    prefix: String,
-    origin: String,
-    path: Vec<u32>,
-    communities: Vec<(u32, u16)>,
-    timestamp: String,
+    announced_updates: usize,
+    withdrawn_updates: usize,
 }
 
 pub fn app(db: DB) -> Router {
@@ -35,37 +32,54 @@ pub fn app(db: DB) -> Router {
 
 fn format(db: DB) -> Vec<APIRouter> {
     let routers = db.routers.lock().unwrap();
-    let mut api_routers = Vec::new();
-    for router in routers.values() {
-        let mut api_peers = Vec::new();
-        for (peer, updates) in &router.peers {
-            let mut api_updates = Vec::new();
+    routers
+        .values()
+        .map(|router| {
+            let api_peers = router.peers.iter().map(|(peer, updates)| {
+                let (ipv4, ipv6) = updates.iter().fold(
+                    (
+                        APIUpdate {
+                            announced_updates: 0,
+                            withdrawn_updates: 0,
+                        },
+                        APIUpdate {
+                            announced_updates: 0,
+                            withdrawn_updates: 0,
+                        },
+                    ),
+                    |(mut ipv4, mut ipv6), (_, update)| {
+                        let counter = if update.prefix.prefix.addr().is_ipv4() {
+                            &mut ipv4
+                        } else {
+                            &mut ipv6
+                        };
 
-            for (_, update) in updates {
-                api_updates.push(APIUpdate {
-                    prefix: update.prefix.to_string(),
-                    origin: update.origin.to_string(),
-                    path: construct_as_path(update.path.clone()),
-                    communities: construct_communities(update.communities.clone()),
-                    timestamp: update.timestamp.to_rfc3339(),
-                });
-            }
+                        if update.announced {
+                            counter.announced_updates += 1;
+                        } else {
+                            counter.withdrawn_updates += 1;
+                        }
 
-            api_peers.push(APIPeers {
-                peer_addr: peer.peer_address,
-                peer_bgp_id: peer.peer_bgp_id,
-                peer_asn: peer.peer_asn.to_u32(),
-                updates: api_updates,
+                        (ipv4, ipv6)
+                    },
+                );
+
+                APIPeers {
+                    peer_addr: peer.peer_address,
+                    peer_bgp_id: peer.peer_bgp_id,
+                    peer_asn: peer.peer_asn.to_u32(),
+                    ipv4,
+                    ipv6,
+                }
             });
-        }
 
-        api_routers.push(APIRouter {
-            router_addr: router.addr,
-            router_port: router.port,
-            peers: api_peers,
-        });
-    }
-    api_routers
+            APIRouter {
+                router_addr: router.addr,
+                router_port: router.port,
+                peers: api_peers.collect(),
+            }
+        })
+        .collect()
 }
 
 async fn root(State(db): State<DB>) -> Json<Vec<APIRouter>> {
