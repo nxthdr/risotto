@@ -1,11 +1,20 @@
 use std::time::Duration;
 
+use config::Config;
 use kafka::error::Error as KafkaError;
 use kafka::producer::{Producer, Record, RequiredAcks};
 use log::error;
 
-pub fn send_to_kafka(broker: &str, topic: &str, data: &[u8]) {
-    if let Err(e) = produce_message(data, topic, vec![broker.to_owned()]) {
+use crate::settings::{get_kafka_details, is_kafka_enabled};
+
+pub fn send_to_kafka(settings: &Config, data: &[u8]) {
+    if !is_kafka_enabled(settings) {
+        return;
+    }
+
+    let (broker, topic) = get_kafka_details(settings);
+
+    if let Err(e) = produce_message(data, &topic, vec![broker.to_owned()]) {
         error!("Failed producing messages: {}", e);
     }
 }

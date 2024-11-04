@@ -12,8 +12,10 @@ use config::Config;
 use env_logger::Builder;
 use log::debug;
 use log::LevelFilter;
+use std::error::Error;
 use std::io::Write;
 use tokio::net::TcpListener;
+use tokio::try_join;
 
 use crate::db::DB;
 
@@ -28,6 +30,12 @@ struct CLI {
 }
 
 fn set_logging(cli: &CLI) {
+    let level_filter = if cli.debug {
+        LevelFilter::Debug
+    } else {
+        LevelFilter::Info
+    };
+
     Builder::new()
         .format(|buf, record| {
             writeln!(
@@ -38,15 +46,16 @@ fn set_logging(cli: &CLI) {
                 record.args()
             )
         })
-        .filter(
-            None,
-            if cli.debug {
-                LevelFilter::Debug
-            } else {
-                LevelFilter::Info
-            },
-        )
+        .filter(None, level_filter)
         .init();
+}
+
+fn load_settings(config_path: &str) -> Config {
+    Config::builder()
+        .add_source(config::File::with_name(config_path))
+        .add_source(config::Environment::with_prefix("RISOTTO"))
+        .build()
+        .unwrap()
 }
 
 async fn api_handler(settings: Config, db: DB) {
@@ -83,22 +92,18 @@ async fn bmp_handler(settings: Config, db: DB) {
 }
 
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<(), Box<dyn Error>> {
     let cli = CLI::parse();
 
-    let settings = Config::builder()
-        .add_source(config::File::with_name(&cli.config))
-        .add_source(config::Environment::with_prefix("RISOTTO"))
-        .build()
-        .unwrap();
-
-    let db = db::new_db().await;
+    let settings = load_settings(&cli.config);
+    let db = db::new_db().await?;
 
     set_logging(&cli);
 
     let api_handler = tokio::spawn(api_handler(settings.clone(), db.clone()));
     let bmp_handler = tokio::spawn(bmp_handler(settings.clone(), db.clone()));
 
-    api_handler.await.unwrap();
-    bmp_handler.await.unwrap();
+    try_join!(api_handler, bmp_handler)?;
+
+    Ok(())
 }

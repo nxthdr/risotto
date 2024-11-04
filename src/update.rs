@@ -137,21 +137,20 @@ pub fn format_update(router: &Router, peer: &Peer, update: &Update) -> String {
         .join(",");
     let communities_str = format!("\"[{}]\"", communities_str);
 
-    let row: Vec<String> = vec![
-        update.timestamp.timestamp_millis().to_string(),
-        map_to_ipv6(router.addr).to_string(),
-        router.port.to_string(),
-        map_to_ipv6(peer.peer_address).to_string(),
-        peer.peer_bgp_id.to_string(),
-        peer.peer_asn.to_string(),
-        map_to_ipv6(update.prefix.prefix.addr()).to_string(),
-        update.prefix.prefix.prefix_len().to_string(),
-        update.origin.to_string(),
-        update.announced.to_string(),
-        update.synthetic.to_string(),
-        as_path_str,
-        communities_str,
-    ];
+    let mut row: Vec<String> = Vec::new();
+    row.push(format!("{}", update.timestamp.timestamp_millis()));
+    row.push(format!("{}", map_to_ipv6(router.addr)));
+    row.push(format!("{}", router.port));
+    row.push(format!("{}", map_to_ipv6(peer.peer_address)));
+    row.push(format!("{}", peer.peer_bgp_id));
+    row.push(format!("{}", peer.peer_asn));
+    row.push(format!("{}", map_to_ipv6(update.prefix.prefix.addr())));
+    row.push(format!("{}", update.prefix.prefix.prefix_len()));
+    row.push(format!("{}", update.origin));
+    row.push(format!("{}", update.announced));
+    row.push(format!("{}", update.synthetic));
+    row.push(format!("{}", as_path_str));
+    row.push(format!("{}", communities_str));
 
     return row.join(",");
 }

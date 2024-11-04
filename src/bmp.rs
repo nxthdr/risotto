@@ -12,7 +12,6 @@ use tokio::net::TcpStream;
 use crate::db::DB;
 use crate::pipeline::send_to_kafka;
 use crate::router::new_router;
-use crate::settings::host;
 use crate::update::{decode_updates, format_update};
 
 pub async fn unmarshal_bmp_packet(socket: &mut TcpStream) -> io::Result<Option<BmpMessage>> {
@@ -48,12 +47,6 @@ pub async fn unmarshal_bmp_packet(socket: &mut TcpStream) -> io::Result<Option<B
 }
 
 pub async fn handle(socket: &mut TcpStream, db: DB, settings: Config) {
-    // Get Kafka information from settings
-    let kafka_addr = settings.get_string("kafka.host").unwrap();
-    let kafka_port = settings.get_int("kafka.port").unwrap();
-    let kafka_host = host(kafka_addr, kafka_port, true);
-    let kafka_topic = settings.get_string("kafka.topic").unwrap();
-
     // Get router IP information
     let socket_info = socket.peer_addr().unwrap();
     let router_ip = socket_info.ip();
@@ -97,7 +90,7 @@ pub async fn handle(socket: &mut TcpStream, db: DB, settings: Config) {
             for update in legitimate_updates {
                 let update = format_update(&router, &peer, &update);
                 info!("{:?}", update);
-                send_to_kafka(&kafka_host, &kafka_topic, update.as_bytes());
+                send_to_kafka(&settings, update.as_bytes());
             }
         }
         BmpMessageBody::PeerDownNotification(body) => {
@@ -121,7 +114,7 @@ pub async fn handle(socket: &mut TcpStream, db: DB, settings: Config) {
             for update in synthetic_updates {
                 let update = format_update(&router, &peer, &update);
                 info!("{:?}", update);
-                send_to_kafka(&kafka_host, &kafka_topic, update.as_bytes());
+                send_to_kafka(&settings, update.as_bytes());
             }
         }
         _ => (),
