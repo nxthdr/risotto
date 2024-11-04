@@ -35,9 +35,11 @@ kafka:
 * Run your Docker container
 
 ```bash
-docker run -v $(PWD)/risotto.yml:/config/risotto.yml ghcr.io/nxthdr/risotto:main -c /config/risotto.yml
+docker run \
+    -v $(PWD)/risotto.yml:/config/risotto.yml \
+    ghcr.io/nxthdr/risotto:main -c /config/risotto.yml
 ```
 
 ## Contributing
 
-Check the [testbed](./testbed/) to try Risotto locally along with two [Bird](https://bird.network.cz/) instances using Docker Compose.
+Check the [testbed](./testbed/) to try Risotto locally along with two [Bird](https://bird.network.cz/) instances by using Docker Compose.
