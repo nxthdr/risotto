@@ -15,7 +15,7 @@ pub fn send_to_kafka(settings: &Config, data: &[u8]) {
     let (broker, topic) = get_kafka_details(settings);
 
     if let Err(e) = produce_message(data, &topic, vec![broker.to_owned()]) {
-        error!("failed producing messages: {}", e);
+        error!("kafka - failed producing messages: {}", e);
     }
 }
 
