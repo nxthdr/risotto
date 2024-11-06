@@ -289,14 +289,13 @@ checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
 name = "bgpkit-parser"
-version = "0.10.10"
+version = "0.10.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7c8601e2221e6417c372677c75df514149e9c48a9f6bf393c40a2d23053c3362"
+checksum = "2e4c2ce32bbbcdd00cf2ea086656764839c1c11047ed5536b03f2c6a757f6292"
 dependencies = [
  "bitflags",
  "bytes",
  "chrono",
- "env_logger",
  "ipnet",
  "itertools 0.13.0",
  "log",
