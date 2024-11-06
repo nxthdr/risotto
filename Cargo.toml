@@ -18,7 +18,7 @@ hex = "0.4.3"
 ipnet = "2.9.0"
 kafka = "0.10.0"
 log = "0.4.22"
-prefix-trie = "0.3.0"
+prefix-trie = "0.5.0"
 serde = { version = "1.0.213", features = ["derive"] }
 tokio = { version = "1.37.0", features = ["full"] }
 tokio-graceful = "0.2.2"

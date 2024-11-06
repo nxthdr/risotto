@@ -1637,9 +1637,9 @@ dependencies = [
 
 [[package]]
 name = "prefix-trie"
-version = "0.3.0"
+version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "04cb065e4407d69a5a5265221262cceeafff7f1aabc545d01ed955cce92ee78b"
+checksum = "4defc8f5ac7522968431b7592a34432215d80cceb1cf7e0c06287087bca4f046"
 dependencies = [
  "ipnet",
  "num-traits",
