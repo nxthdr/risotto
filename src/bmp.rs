@@ -61,6 +61,7 @@ pub async fn handle(socket: &mut TcpStream, db: DB, settings: Config) {
         return;
     };
     let peer = Peer::new(pph.peer_bgp_id, pph.peer_ip, pph.peer_asn);
+    let ts = (pph.timestamp * 1000.0) as i64;
 
     // Fetch router from the DB
     let mut routers = db.routers.lock().unwrap();
@@ -76,7 +77,7 @@ pub async fn handle(socket: &mut TcpStream, db: DB, settings: Config) {
         }
         BmpMessageBody::RouteMonitoring(body) => {
             debug!("{:?}", body);
-            let potential_updates = decode_updates(body).unwrap_or(Vec::new());
+            let potential_updates = decode_updates(body, ts).unwrap_or(Vec::new());
 
             let mut legitimate_updates = Vec::new();
             for update in potential_updates {

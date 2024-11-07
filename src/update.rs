@@ -1,9 +1,10 @@
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, MappedLocalTime, TimeZone, Utc};
 
 use crate::router::Router;
 use bgpkit_parser::bmp::messages::RouteMonitoring;
 use bgpkit_parser::models::*;
 use core::net::IpAddr;
+use log::error;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Update {
@@ -16,7 +17,7 @@ pub struct Update {
     pub synthetic: bool,
 }
 
-pub fn decode_updates(message: RouteMonitoring) -> Option<Vec<Update>> {
+pub fn decode_updates(message: RouteMonitoring, timestamp: i64) -> Option<Vec<Update>> {
     let mut updates = Vec::new();
 
     match message.bgp_message {
@@ -57,14 +58,25 @@ pub fn decode_updates(message: RouteMonitoring) -> Option<Vec<Update>> {
             };
             let communities: Vec<MetaCommunity> = attributes.iter_communities().collect();
 
+            let timestamp = match Utc.timestamp_millis_opt(timestamp) {
+                MappedLocalTime::Single(dt) => dt,
+                _ => {
+                    error!(
+                        "bmp - failed to parse timestamp: {}, using Utc::now()",
+                        timestamp
+                    );
+                    Utc::now()
+                }
+            };
+
             for (prefix, announced) in prefixes_to_update {
                 updates.push(Update {
-                    prefix: prefix,
-                    announced: announced,
-                    origin: origin,
+                    prefix,
+                    announced,
+                    origin,
                     path: path.clone(),
                     communities: communities.clone(),
-                    timestamp: Utc::now(),
+                    timestamp,
                     synthetic: false,
                 });
             }
