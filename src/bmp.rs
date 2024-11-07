@@ -86,7 +86,7 @@ pub async fn handle(socket: &mut TcpStream, db: DB, settings: Config) {
                 }
             }
 
-            // TODO: Handle multiple event pipelines (stdout, CSV file, Kafka, ...)
+            // TODO: handle multiple event pipelines (stdout, CSV file, Kafka, ...)
             for update in legitimate_updates {
                 let update = format_update(&router, &peer, &update);
                 info!("{:?}", update);
@@ -110,7 +110,7 @@ pub async fn handle(socket: &mut TcpStream, db: DB, settings: Config) {
             // And we then update the internal state
             router.remove_peer(&peer);
 
-            // TODO: Handle multiple event pipelines (stdout, CSV file, Kafka, ...)
+            // TODO: handle multiple event pipelines (stdout, CSV file, Kafka, ...)
             for update in synthetic_updates {
                 let update = format_update(&router, &peer, &update);
                 info!("{:?}", update);

@@ -1,8 +1,12 @@
+use crate::db::DB;
 use axum::{extract::State, routing::get, Json, Router};
 use core::net::{IpAddr, Ipv4Addr};
+use metrics::{Key, Label, Recorder};
+use metrics_exporter_prometheus::PrometheusBuilder;
 use serde::{Deserialize, Serialize};
 
-use crate::db::DB;
+static METADATA: metrics::Metadata =
+    metrics::Metadata::new(module_path!(), metrics::Level::INFO, Some(module_path!()));
 
 #[derive(Debug, Serialize, Deserialize)]
 struct APIRouter {
@@ -22,12 +26,25 @@ struct APIPeers {
 
 #[derive(Debug, Serialize, Deserialize)]
 struct APIUpdate {
-    announced_updates: usize,
-    withdrawn_updates: usize,
+    announced: usize,
+    withdrawn: usize,
+}
+
+#[derive(Clone)]
+struct AppState {
+    db: DB,
+    // prometheus_handle: Arc<PrometheusHandle>,
 }
 
 pub fn app(db: DB) -> Router {
-    Router::new().route("/", get(root).with_state(db))
+    let app_state = AppState {
+        db: db.clone(),
+        // prometheus_handle: Arc::new(PrometheusBuilder::new().install_recorder().unwrap()),
+    };
+
+    Router::new()
+        .route("/", get(root).with_state(app_state.clone()))
+        .route("/metrics", get(metrics).with_state(app_state.clone()))
 }
 
 fn format(db: DB) -> Vec<APIRouter> {
@@ -39,12 +56,12 @@ fn format(db: DB) -> Vec<APIRouter> {
                 let (ipv4, ipv6) = updates.iter().fold(
                     (
                         APIUpdate {
-                            announced_updates: 0,
-                            withdrawn_updates: 0,
+                            announced: 0,
+                            withdrawn: 0,
                         },
                         APIUpdate {
-                            announced_updates: 0,
-                            withdrawn_updates: 0,
+                            announced: 0,
+                            withdrawn: 0,
                         },
                     ),
                     |(mut ipv4, mut ipv6), (_, update)| {
@@ -55,9 +72,9 @@ fn format(db: DB) -> Vec<APIRouter> {
                         };
 
                         if update.announced {
-                            counter.announced_updates += 1;
+                            counter.announced += 1;
                         } else {
-                            counter.withdrawn_updates += 1;
+                            counter.withdrawn += 1;
                         }
 
                         (ipv4, ipv6)
@@ -82,7 +99,50 @@ fn format(db: DB) -> Vec<APIRouter> {
         .collect()
 }
 
-async fn root(State(db): State<DB>) -> Json<Vec<APIRouter>> {
+async fn root(State(AppState { db, .. }): State<AppState>) -> Json<Vec<APIRouter>> {
     let api_routers = format(db);
     Json(api_routers)
+}
+
+async fn metrics(
+    State(AppState {
+        db,
+        // prometheus_handle,
+    }): State<AppState>,
+) -> String {
+    let routers = db.routers.lock().unwrap();
+    let recorder = PrometheusBuilder::new().build_recorder();
+
+    recorder.describe_gauge(
+        "risotto_bgp_peers".into(),
+        None,
+        "Number of BGP peers per router".into(),
+    );
+    for router in routers.values() {
+        let labels = vec![Label::new("router", router.addr.to_string())];
+        let key = Key::from_parts("risotto_bgp_peers", labels);
+        recorder
+            .register_gauge(&key, &METADATA)
+            .set(router.peers.len() as f64);
+    }
+
+    recorder.describe_gauge(
+        "risotto_bgp_updates".into(),
+        None,
+        "Number of BGP updates per (router, peer)".into(),
+    );
+    for router in routers.values() {
+        for (peer, updates) in router.peers.iter() {
+            let labels = vec![
+                Label::new("router", router.addr.to_string()),
+                Label::new("peer", peer.peer_address.to_string()),
+            ];
+            let key = Key::from_parts("risotto_bgp_updates", labels);
+            recorder
+                .register_gauge(&key, &METADATA)
+                .set(updates.len() as f64);
+        }
+    }
+
+    recorder.handle().render()
 }

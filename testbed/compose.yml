@@ -25,7 +25,7 @@ services:
         ipv4_address: 10.0.0.20
   risotto:
     build: ..
-    command: --config /config/risotto
+    command: -vv --config /config/risotto
     volumes:
       - ./config/risotto/risotto.yml:/config/risotto.yml
     networks:
