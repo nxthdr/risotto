@@ -67,7 +67,7 @@ async fn process(
     let ts = (pph.timestamp * 1000.0) as i64;
 
     // Fetch router from the DB
-    let mut routers = db.routers.lock().unwrap();
+    let mut routers = db.lock().unwrap();
     let router = routers
         .entry(router_ip)
         .or_insert_with(|| new_router(router_ip, router_port));
@@ -99,6 +99,9 @@ async fn process(
             }
             let mut buffer = BufReader::new(buffer.as_slice());
 
+            // Drop the lock before sending to the event pipeline
+            drop(routers);
+
             // TODO: handle multiple event pipelines (stdout, CSV file, Kafka, ...)
             send_to_kafka(&mut buffer, &global_config);
         }
@@ -127,6 +130,9 @@ async fn process(
                 buffer.extend(b"\n");
             }
             let mut buffer = BufReader::new(buffer.as_slice());
+
+            // Drop the lock before sending to the event pipeline
+            drop(routers);
 
             // TODO: handle multiple event pipelines (stdout, CSV file, Kafka, ...)
             send_to_kafka(&mut buffer, &global_config);

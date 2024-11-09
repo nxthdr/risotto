@@ -47,8 +47,8 @@ pub fn app(db: DB) -> Router {
         .route("/metrics", get(metrics).with_state(app_state.clone()))
 }
 
-fn format(db: DB) -> Vec<APIRouter> {
-    let routers = db.routers.lock().unwrap();
+async fn format(db: DB) -> Vec<APIRouter> {
+    let routers = db.lock().unwrap();
     routers
         .values()
         .map(|router| {
@@ -100,7 +100,7 @@ fn format(db: DB) -> Vec<APIRouter> {
 }
 
 async fn root(State(AppState { db, .. }): State<AppState>) -> Json<Vec<APIRouter>> {
-    let api_routers = format(db);
+    let api_routers = format(db).await;
     Json(api_routers)
 }
 
@@ -110,7 +110,7 @@ async fn metrics(
         // prometheus_handle,
     }): State<AppState>,
 ) -> String {
-    let routers = db.routers.lock().unwrap();
+    let routers = db.lock().unwrap();
     let recorder = PrometheusBuilder::new().build_recorder();
 
     recorder.describe_gauge(
