@@ -1,5 +1,4 @@
 use crate::db::DB;
-use crate::producer::send_to_kafka;
 use crate::router::new_router;
 use crate::update::{decode_updates, format_update};
 use bgpkit_parser::models::Peer;
@@ -7,11 +6,10 @@ use bgpkit_parser::parse_bmp_msg;
 use bgpkit_parser::parser::bmp::messages::{BmpMessage, BmpMessageBody};
 use bytes::Bytes;
 use chrono::Utc;
-use config::Config;
 use core::net::IpAddr;
 use log::{debug, info, warn};
-use std::io::{BufReader, Result};
-use std::sync::Arc;
+use std::io::Result;
+use std::sync::mpsc::Sender;
 use tokio::io::AsyncReadExt;
 use tokio::net::TcpStream;
 
@@ -54,7 +52,7 @@ pub async fn unmarshal_bmp_packet(socket: &mut TcpStream) -> Result<Option<BmpMe
 
 async fn process(
     db: DB,
-    global_config: Arc<Config>,
+    tx: Sender<Vec<u8>>,
     router_ip: IpAddr,
     router_port: u16,
     message: BmpMessage,
@@ -97,13 +95,10 @@ async fn process(
                 buffer.extend(update.as_bytes());
                 buffer.extend(b"\n");
             }
-            let mut buffer = BufReader::new(buffer.as_slice());
+            // let buffer = BufReader::new(buffer);
 
-            // Drop the lock before sending to the event pipeline
-            drop(routers);
-
-            // TODO: handle multiple event pipelines (stdout, CSV file, Kafka, ...)
-            send_to_kafka(&mut buffer, &global_config);
+            // Sent to the event pipeline
+            tx.send(buffer).unwrap();
         }
         BmpMessageBody::PeerDownNotification(body) => {
             debug!("{:?}", body);
@@ -129,19 +124,15 @@ async fn process(
                 buffer.extend(update.as_bytes());
                 buffer.extend(b"\n");
             }
-            let mut buffer = BufReader::new(buffer.as_slice());
 
-            // Drop the lock before sending to the event pipeline
-            drop(routers);
-
-            // TODO: handle multiple event pipelines (stdout, CSV file, Kafka, ...)
-            send_to_kafka(&mut buffer, &global_config);
+            // Sent to the event pipeline
+            tx.send(buffer).unwrap();
         }
         _ => (),
     }
 }
 
-pub async fn handle(socket: &mut TcpStream, db: DB, cfg: Arc<Config>) {
+pub async fn handle(socket: &mut TcpStream, db: DB, tx: Sender<Vec<u8>>) {
     // Get router IP information
     let socket_info = socket.peer_addr().unwrap();
     let router_ip = socket_info.ip();
@@ -156,9 +147,9 @@ pub async fn handle(socket: &mut TcpStream, db: DB, cfg: Arc<Config>) {
 
         // Process the BMP message
         let process_db = db.clone();
-        let process_cfg = cfg.clone();
+        let process_tx = tx.clone();
         tokio::spawn(async move {
-            process(process_db, process_cfg, router_ip, router_port, message).await;
+            process(process_db, process_tx, router_ip, router_port, message).await;
         });
     }
 }

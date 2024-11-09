@@ -104,12 +104,7 @@ async fn root(State(AppState { db, .. }): State<AppState>) -> Json<Vec<APIRouter
     Json(api_routers)
 }
 
-async fn metrics(
-    State(AppState {
-        db,
-        // prometheus_handle,
-    }): State<AppState>,
-) -> String {
+async fn metrics(State(AppState { db }): State<AppState>) -> String {
     let routers = db.lock().unwrap();
     let recorder = PrometheusBuilder::new().build_recorder();
 

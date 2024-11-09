@@ -13,6 +13,7 @@ use env_logger::Builder;
 use log::{debug, info};
 use std::error::Error;
 use std::io::Write;
+use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::TcpListener;
@@ -69,7 +70,7 @@ async fn api_handler(db: DB, cfg: Arc<Config>) {
     axum::serve(api_listener, app).await.unwrap();
 }
 
-async fn bmp_handler(db: DB, cfg: Arc<Config>) {
+async fn bmp_handler(db: DB, cfg: Arc<Config>, tx: Sender<Vec<u8>>) {
     let address = cfg.get_string("bmp.address").unwrap();
     let port = cfg.get_int("bmp.port").unwrap();
     let host = settings::host(address, port, false);
@@ -80,13 +81,19 @@ async fn bmp_handler(db: DB, cfg: Arc<Config>) {
     loop {
         let (mut bmp_socket, _) = bmp_listener.accept().await.unwrap();
         let bmp_db = db.clone();
-        let bmp_cfg = cfg.clone();
+        let tx = tx.clone();
 
         // We spawn a new task for each BMP connection
         tokio::spawn(async move {
-            bmp::handle(&mut bmp_socket, bmp_db.clone(), bmp_cfg.clone()).await;
+            bmp::handle(&mut bmp_socket, bmp_db.clone(), tx).await;
         });
     }
+}
+
+async fn producer_handler(cfg: Arc<Config>, rx: Receiver<Vec<u8>>) {
+    let cfg = settings::get_kafka_config(&cfg).unwrap();
+
+    producer::handle(&cfg, rx).await;
 }
 
 #[tokio::main]
@@ -99,18 +106,24 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     set_logging(&cli);
 
-    let api_handler = shutdown.spawn_task(api_handler(db.clone(), cfg.clone()));
-    let bmp_handler = shutdown.spawn_task(bmp_handler(db.clone(), cfg.clone()));
+    let (tx, rx) = channel();
+
+    let api_task = shutdown.spawn_task(api_handler(db.clone(), cfg.clone()));
+    let bmp_task = shutdown.spawn_task(bmp_handler(db.clone(), cfg.clone(), tx));
+    let producer_task = shutdown.spawn_task(producer_handler(cfg.clone(), rx));
 
     tokio::select! {
         _ = shutdown.shutdown_with_limit(Duration::from_secs(1)) => {
             info!("shutdown - gracefully after shutdown signal received");
         },
-        _ = api_handler => {
+        _ = api_task => {
             info!("api - handler shutdown");
         }
-        _ = bmp_handler => {
+        _ = bmp_task => {
             info!("bmp - handler shutdown");
+        }
+        _ = producer_task => {
+            info!("producer - handler shutdown");
         }
     }
 

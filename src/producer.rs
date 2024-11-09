@@ -1,13 +1,14 @@
 use std::time::Duration;
 
-use crate::settings::{get_kafka_config, KafkaConfig};
-use config::Config;
-use kafka::client::{Compression, KafkaClient, DEFAULT_CONNECTION_IDLE_TIMEOUT_MILLIS};
+use crate::settings::KafkaConfig;
+use kafka::client::{Compression, DEFAULT_CONNECTION_IDLE_TIMEOUT_MILLIS};
 use kafka::producer::{AsBytes, Producer, Record, RequiredAcks, DEFAULT_ACK_TIMEOUT_MILLIS};
 use log::error;
 use std::error::Error;
 use std::io::BufRead;
+use std::io::Cursor;
 use std::ops::{Deref, DerefMut};
+use std::sync::mpsc::Receiver;
 
 struct Trimmed(String);
 
@@ -31,32 +32,21 @@ impl DerefMut for Trimmed {
 }
 
 fn produce_impl(
-    data: &mut dyn BufRead,
-    client: KafkaClient,
+    producer: &mut Producer,
     cfg: &KafkaConfig,
+    data: &mut dyn BufRead,
 ) -> Result<(), Box<dyn Error>> {
-    // TODO: Allow compression setting via the config file
-    // TODO: Allow timeouts settins via the config file
-    let mut producer = Producer::from_client(client)
-        .with_ack_timeout(Duration::from_millis(DEFAULT_ACK_TIMEOUT_MILLIS))
-        .with_connection_idle_timeout(Duration::from_millis(
-            DEFAULT_CONNECTION_IDLE_TIMEOUT_MILLIS,
-        ))
-        .with_required_acks(RequiredAcks::One)
-        .with_compression(Compression::NONE)
-        .create()?;
-
     if cfg.batch_size < 2 {
-        produce_impl_nobatch(&mut producer, data, cfg)
+        produce_impl_nobatch(producer, cfg, data)
     } else {
-        produce_impl_inbatches(&mut producer, data, cfg)
+        produce_impl_inbatches(producer, cfg, data)
     }
 }
 
 fn produce_impl_nobatch(
     producer: &mut Producer,
-    data: &mut dyn BufRead,
     cfg: &KafkaConfig,
+    data: &mut dyn BufRead,
 ) -> Result<(), Box<dyn Error>> {
     let mut rec = Record::from_value(&cfg.topic, Trimmed(String::new()));
     loop {
@@ -75,8 +65,8 @@ fn produce_impl_nobatch(
 
 fn produce_impl_inbatches(
     producer: &mut Producer,
-    data: &mut dyn BufRead,
     cfg: &KafkaConfig,
+    data: &mut dyn BufRead,
 ) -> Result<(), Box<dyn Error>> {
     assert!(cfg.batch_size > 1);
 
@@ -131,18 +121,56 @@ fn send_batch(
     Ok(())
 }
 
-pub fn send_to_kafka(data: &mut dyn BufRead, global_config: &Config) {
-    let cfg = get_kafka_config(global_config).unwrap();
-    if !cfg.enabled {
-        return;
+pub async fn handle(cfg: &KafkaConfig, rx: Receiver<Vec<u8>>) {
+    // TODO: Allow multiple brokers via the config file
+    let mut client = kafka::client::KafkaClient::new(vec![cfg.host.to_owned()]);
+
+    // Wait until the metadata we succeed to reach the Kafka brokers
+    loop {
+        match client.load_metadata(&[cfg.topic.to_owned()]) {
+            Ok(_) => break,
+            Err(_) => {
+                error!("producer - failed to load metadata: retrying in 5 seconds");
+                std::thread::sleep(Duration::from_secs(5));
+            }
+        }
     }
 
-    // TODO: Allow multiple brokers via the config file
-    // This will allow automatic topic creation if necessary
-    let mut client = kafka::client::KafkaClient::new(vec![cfg.host.to_owned()]);
-    let _ = client.load_metadata(&[cfg.topic.to_owned()]).unwrap();
+    // TODO: Allow compression setting via the config file
+    // TODO: Allow timeouts settins via the config file
+    let mut producer = Producer::from_client(client)
+        .with_ack_timeout(Duration::from_millis(DEFAULT_ACK_TIMEOUT_MILLIS))
+        .with_connection_idle_timeout(Duration::from_millis(
+            DEFAULT_CONNECTION_IDLE_TIMEOUT_MILLIS,
+        ))
+        .with_required_acks(RequiredAcks::One)
+        .with_compression(Compression::NONE)
+        .create()
+        .unwrap();
 
-    if let Err(e) = produce_impl(data, client, &cfg) {
-        error!("kafka - failed producing messages: {}", e);
+    loop {
+        // Wait the batch wait time to collect messages
+        std::thread::sleep(Duration::from_secs(cfg.batch_wait));
+        let mut data = Vec::new();
+        loop {
+            // Attempt to collect a message from BMP handler
+            // Within a fixed time frame
+            match rx.recv_timeout(Duration::from_millis(100)) {
+                Ok(d) => data.extend(d),
+                Err(_) => break,
+            }
+        }
+
+        // If no data was collected within the batch waiting time,
+        // continue to the next iteration
+        if data.is_empty() {
+            continue;
+        }
+
+        // Send the collected messages to Kafka in batches
+        let mut data = Cursor::new(data);
+        if let Err(e) = produce_impl(&mut producer, &cfg, &mut data) {
+            error!("producer - failed producing messages: {}", e);
+        }
     }
 }
