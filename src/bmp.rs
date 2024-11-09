@@ -4,7 +4,7 @@ use bgpkit_parser::parser::bmp::messages::{BmpMessage, BmpMessageBody};
 use bytes::Bytes;
 use chrono::Utc;
 use config::Config;
-use log::{debug, info};
+use log::{debug, info, warn};
 use std::io;
 use tokio::io::AsyncReadExt;
 use tokio::net::TcpStream;
@@ -28,10 +28,11 @@ pub async fn unmarshal_bmp_packet(socket: &mut TcpStream) -> io::Result<Option<B
     }
 
     if packet_length > 4096 {
-        return Err(io::Error::new(
-            io::ErrorKind::Other,
-            "BMP message too big: {} bytes",
-        ));
+        warn!(
+            "bmp - failed to parse BMP message: message too big: {} bytes",
+            packet_length
+        );
+        return Ok(None);
     }
 
     // Exactly read the number of bytes found in the BMP message
@@ -41,9 +42,13 @@ pub async fn unmarshal_bmp_packet(socket: &mut TcpStream) -> io::Result<Option<B
     let mut bytes = Bytes::copy_from_slice(&buf);
 
     // Parse the BMP message
-    let message = parse_bmp_msg(&mut bytes).unwrap();
-
-    return Ok(Some(message));
+    match parse_bmp_msg(&mut bytes) {
+        Ok(message) => Ok(Some(message)),
+        Err(_) => {
+            warn!("bmp - failed to parse BMP message");
+            Ok(None)
+        }
+    }
 }
 
 pub async fn handle(socket: &mut TcpStream, db: DB, settings: Config) {
