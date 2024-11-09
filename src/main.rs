@@ -1,7 +1,7 @@
 mod api;
 mod bmp;
 mod db;
-mod pipeline;
+mod producer;
 mod router;
 mod settings;
 mod update;
@@ -13,6 +13,7 @@ use env_logger::Builder;
 use log::{debug, info};
 use std::error::Error;
 use std::io::Write;
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio_graceful::Shutdown;
@@ -46,17 +47,18 @@ fn set_logging(cli: &CLI) {
         .init();
 }
 
-fn load_settings(config_path: &str) -> Config {
-    Config::builder()
+fn load_settings(config_path: &str) -> Arc<Config> {
+    let cfg = Config::builder()
         .add_source(config::File::with_name(config_path))
         .add_source(config::Environment::with_prefix("RISOTTO"))
         .build()
-        .unwrap()
+        .unwrap();
+    Arc::new(cfg)
 }
 
-async fn api_handler(settings: Config, db: DB) {
-    let address = settings.get_string("api.address").unwrap();
-    let port = settings.get_int("api.port").unwrap();
+async fn api_handler(db: DB, cfg: Arc<Config>) {
+    let address = cfg.get_string("api.address").unwrap();
+    let port = cfg.get_int("api.port").unwrap();
     let host = settings::host(address, port, false);
 
     debug!("api - binding listener to {}", host);
@@ -67,9 +69,9 @@ async fn api_handler(settings: Config, db: DB) {
     axum::serve(api_listener, app).await.unwrap();
 }
 
-async fn bmp_handler(settings: Config, db: DB) {
-    let address = settings.get_string("bmp.address").unwrap();
-    let port = settings.get_int("bmp.port").unwrap();
+async fn bmp_handler(db: DB, cfg: Arc<Config>) {
+    let address = cfg.get_string("bmp.address").unwrap();
+    let port = cfg.get_int("bmp.port").unwrap();
     let host = settings::host(address, port, false);
 
     debug!("bmp - binding listener to {}", host);
@@ -78,11 +80,11 @@ async fn bmp_handler(settings: Config, db: DB) {
     loop {
         let (mut bmp_socket, _) = bmp_listener.accept().await.unwrap();
         let bmp_db = db.clone();
-        let bmp_settings = settings.clone();
+        let bmp_cfg = cfg.clone();
+
+        // We spawn a new task for each BMP connection
         tokio::spawn(async move {
-            loop {
-                bmp::handle(&mut bmp_socket, bmp_db.clone(), bmp_settings.clone()).await
-            }
+            bmp::handle(&mut bmp_socket, bmp_db.clone(), bmp_cfg.clone()).await;
         });
     }
 }
@@ -91,14 +93,14 @@ async fn bmp_handler(settings: Config, db: DB) {
 async fn main() -> Result<(), Box<dyn Error>> {
     let cli = CLI::parse();
 
-    let settings = load_settings(&cli.config);
+    let cfg = load_settings(&cli.config);
     let db = db::new_db().await?;
     let shutdown: Shutdown = Shutdown::default();
 
     set_logging(&cli);
 
-    let api_handler = shutdown.spawn_task(api_handler(settings.clone(), db.clone()));
-    let bmp_handler = shutdown.spawn_task(bmp_handler(settings.clone(), db.clone()));
+    let api_handler = shutdown.spawn_task(api_handler(db.clone(), cfg.clone()));
+    let bmp_handler = shutdown.spawn_task(bmp_handler(db.clone(), cfg.clone()));
 
     tokio::select! {
         _ = shutdown.shutdown_with_limit(Duration::from_secs(1)) => {

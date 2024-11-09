@@ -1,20 +1,21 @@
+use crate::db::DB;
+use crate::producer::send_to_kafka;
+use crate::router::new_router;
+use crate::update::{decode_updates, format_update};
 use bgpkit_parser::models::Peer;
 use bgpkit_parser::parse_bmp_msg;
 use bgpkit_parser::parser::bmp::messages::{BmpMessage, BmpMessageBody};
 use bytes::Bytes;
 use chrono::Utc;
 use config::Config;
+use core::net::IpAddr;
 use log::{debug, info, warn};
-use std::io;
+use std::io::{BufReader, Result};
+use std::sync::Arc;
 use tokio::io::AsyncReadExt;
 use tokio::net::TcpStream;
 
-use crate::db::DB;
-use crate::pipeline::send_to_kafka;
-use crate::router::new_router;
-use crate::update::{decode_updates, format_update};
-
-pub async fn unmarshal_bmp_packet(socket: &mut TcpStream) -> io::Result<Option<BmpMessage>> {
+pub async fn unmarshal_bmp_packet(socket: &mut TcpStream) -> Result<Option<BmpMessage>> {
     // Get minimal packet length to get how many bytes to remove from the socket
     let mut min_buff = [0; 6];
     socket.peek(&mut min_buff).await?;
@@ -51,16 +52,13 @@ pub async fn unmarshal_bmp_packet(socket: &mut TcpStream) -> io::Result<Option<B
     }
 }
 
-pub async fn handle(socket: &mut TcpStream, db: DB, settings: Config) {
-    // Get router IP information
-    let socket_info = socket.peer_addr().unwrap();
-    let router_ip = socket_info.ip();
-    let router_port = socket_info.port();
-
-    // Get BMP message
-    let result = unmarshal_bmp_packet(socket).await.unwrap();
-    let Some(message) = result else { return };
-
+async fn process(
+    db: DB,
+    global_config: Arc<Config>,
+    router_ip: IpAddr,
+    router_port: u16,
+    message: BmpMessage,
+) {
     // Get peer information
     let Some(pph) = message.per_peer_header else {
         return;
@@ -92,12 +90,17 @@ pub async fn handle(socket: &mut TcpStream, db: DB, settings: Config) {
                 }
             }
 
-            // TODO: handle multiple event pipelines (stdout, CSV file, Kafka, ...)
+            let mut buffer = vec![];
             for update in legitimate_updates {
                 let update = format_update(&router, &peer, &update);
                 info!("{:?}", update);
-                send_to_kafka(&settings, update.as_bytes());
+                buffer.extend(update.as_bytes());
+                buffer.extend(b"\n");
             }
+            let mut buffer = BufReader::new(buffer.as_slice());
+
+            // TODO: handle multiple event pipelines (stdout, CSV file, Kafka, ...)
+            send_to_kafka(&mut buffer, &global_config);
         }
         BmpMessageBody::PeerDownNotification(body) => {
             debug!("{:?}", body);
@@ -116,13 +119,40 @@ pub async fn handle(socket: &mut TcpStream, db: DB, settings: Config) {
             // And we then update the internal state
             router.remove_peer(&peer);
 
-            // TODO: handle multiple event pipelines (stdout, CSV file, Kafka, ...)
+            let mut buffer = vec![];
             for update in synthetic_updates {
                 let update = format_update(&router, &peer, &update);
                 info!("{:?}", update);
-                send_to_kafka(&settings, update.as_bytes());
+                buffer.extend(update.as_bytes());
+                buffer.extend(b"\n");
             }
+            let mut buffer = BufReader::new(buffer.as_slice());
+
+            // TODO: handle multiple event pipelines (stdout, CSV file, Kafka, ...)
+            send_to_kafka(&mut buffer, &global_config);
         }
         _ => (),
+    }
+}
+
+pub async fn handle(socket: &mut TcpStream, db: DB, cfg: Arc<Config>) {
+    // Get router IP information
+    let socket_info = socket.peer_addr().unwrap();
+    let router_ip = socket_info.ip();
+    let router_port = socket_info.port();
+
+    loop {
+        // Get BMP message
+        let result = unmarshal_bmp_packet(socket).await.unwrap();
+        let Some(message) = result else {
+            continue;
+        };
+
+        // Process the BMP message
+        let process_db = db.clone();
+        let process_cfg = cfg.clone();
+        tokio::spawn(async move {
+            process(process_db, process_cfg, router_ip, router_port, message).await;
+        });
     }
 }

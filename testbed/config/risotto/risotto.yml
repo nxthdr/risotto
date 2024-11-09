@@ -7,7 +7,6 @@ bmp:
   port: 4000
 
 kafka:
-  enabled: false
-  host: kafka.example.com
+  address: 10.0.0.100
   port: 9092
   topic: bgp-updates

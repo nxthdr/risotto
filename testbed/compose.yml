@@ -11,6 +11,7 @@ services:
     networks:
       testbed:
         ipv4_address: 10.0.0.10
+  
   bird_20:
     build: ./bird
     user: root
@@ -23,6 +24,16 @@ services:
     networks:
       testbed:
         ipv4_address: 10.0.0.20
+      
+  redpanda:
+    image: vectorized/redpanda:latest
+    command: redpanda start --check=false --overprovisioned --smp 1 --memory 500M
+    volumes:
+      - ./config/redpanda/redpanda.yml:/etc/redpanda/redpanda.yaml:ro
+    networks:
+      testbed:
+        ipv4_address: 10.0.0.100
+
   risotto:
     build: ..
     command: -vv --config /config/risotto
@@ -30,7 +41,9 @@ services:
       - ./config/risotto/risotto.yml:/config/risotto.yml
     networks:
       testbed:
-        ipv4_address: 10.0.0.100
+        ipv4_address: 10.0.0.200
+    depends_on:
+      - redpanda
 
 networks:
   testbed:

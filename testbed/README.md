@@ -15,13 +15,13 @@ Both routers are configured to send BMP messages to the Risotto instance accessi
 docker compose up --build --force-recreate
 ```
 
-* Check Risotto state
+* You can check Risotto state
 
 ```sh
 curl -s http://10.0.0.100:3000 |jq
 ```
 
-* Get Prometheus metrics
+* Or get Prometheus metrics
 
 ```sh
 curl -s http://10.0.0.100:3000/metrics
@@ -32,4 +32,11 @@ curl -s http://10.0.0.100:3000/metrics
 ```sh
 docker exec -ti testbed-bird_10-1 /bin/bash
 birdc
+```
+
+* You can exec into redpanda container to interact with it
+
+```sh
+docker exec -ti testbed-redpanda-1 /bin/bash
+rpk topic consume bgp-updates
 ```
