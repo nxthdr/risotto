@@ -10,4 +10,4 @@ kafka:
   address: 10.0.0.100
   port: 9092
   topic: bgp-updates
-  batch_size: 100
+  batch_max_size: 1

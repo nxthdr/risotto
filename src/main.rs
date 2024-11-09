@@ -8,6 +8,7 @@ mod update;
 
 use chrono::Local;
 use clap::Parser;
+use clap_verbosity_flag::{InfoLevel, Verbosity};
 use config::Config;
 use env_logger::Builder;
 use log::{debug, info};
@@ -28,7 +29,7 @@ struct CLI {
     config: String,
 
     #[command(flatten)]
-    verbose: clap_verbosity_flag::Verbosity,
+    verbose: Verbosity<InfoLevel>,
 }
 
 fn set_logging(cli: &CLI) {
@@ -106,6 +107,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     set_logging(&cli);
 
+    // MPSC channel to communicate between BMP tasks and producer task
     let (tx, rx) = channel();
 
     let api_task = shutdown.spawn_task(api_handler(db.clone(), cfg.clone()));
@@ -115,7 +117,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     tokio::select! {
         _ = shutdown.shutdown_with_limit(Duration::from_secs(1)) => {
             info!("shutdown - gracefully after shutdown signal received");
-        },
+        }
         _ = api_task => {
             info!("api - handler shutdown");
         }

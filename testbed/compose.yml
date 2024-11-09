@@ -36,7 +36,7 @@ services:
 
   risotto:
     build: ..
-    command: -vv --config /config/risotto
+    command: -v --config /config/risotto
     volumes:
       - ./config/risotto/risotto.yml:/config/risotto.yml
     networks:

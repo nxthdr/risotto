@@ -5,7 +5,7 @@ use std::error::Error;
 pub struct KafkaConfig {
     pub host: String,
     pub topic: String,
-    pub batch_size: u64,
+    pub batch_max_size: u64,
     pub batch_wait: u64,
 }
 
@@ -18,13 +18,13 @@ pub fn get_kafka_config(settings: &Config) -> Result<KafkaConfig, Box<dyn Error>
     let host = host(kafka_addr, kafka_port, true);
 
     let topic = settings.get_string("kafka.topic")?;
-    let batch_size = settings.get_int("kafka.batch_size").unwrap_or(1) as u64;
+    let batch_max_size = settings.get_int("kafka.batch_max_size").unwrap_or(100) as u64;
     let batch_wait = settings.get_int("kafka.batch_wait").unwrap_or(1) as u64;
 
     Ok(KafkaConfig {
         host,
         topic,
-        batch_size,
+        batch_max_size,
         batch_wait,
     })
 }

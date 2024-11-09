@@ -8,7 +8,7 @@ use std::error::Error;
 use std::io::BufRead;
 use std::io::Cursor;
 use std::ops::{Deref, DerefMut};
-use std::sync::mpsc::Receiver;
+use std::sync::mpsc::{Receiver, TryRecvError};
 
 struct Trimmed(String);
 
@@ -35,51 +35,20 @@ fn produce_impl(
     producer: &mut Producer,
     cfg: &KafkaConfig,
     data: &mut dyn BufRead,
-) -> Result<(), Box<dyn Error>> {
-    if cfg.batch_size < 2 {
-        produce_impl_nobatch(producer, cfg, data)
-    } else {
-        produce_impl_inbatches(producer, cfg, data)
-    }
-}
-
-fn produce_impl_nobatch(
-    producer: &mut Producer,
-    cfg: &KafkaConfig,
-    data: &mut dyn BufRead,
-) -> Result<(), Box<dyn Error>> {
-    let mut rec = Record::from_value(&cfg.topic, Trimmed(String::new()));
-    loop {
-        rec.value.clear();
-        if data.read_line(&mut rec.value)? == 0 {
-            break; // ~ EOF reached
-        }
-        if rec.value.trim().is_empty() {
-            continue; // ~ skip empty lines
-        }
-        // ~ directly send to kafka
-        producer.send(&rec)?;
-    }
-    Ok(())
-}
-
-fn produce_impl_inbatches(
-    producer: &mut Producer,
-    cfg: &KafkaConfig,
-    data: &mut dyn BufRead,
-) -> Result<(), Box<dyn Error>> {
-    assert!(cfg.batch_size > 1);
+) -> Result<usize, Box<dyn Error>> {
+    // assert!(cfg.batch_max_size > 1);
 
     // ~ a buffer of prepared records to be send in a batch to Kafka
     // ~ in the loop following, we'll only modify the 'value' of the
     // cached records
-    let mut rec_stash: Vec<Record<'_, (), Trimmed>> = (0..cfg.batch_size)
+    let mut rec_stash: Vec<Record<'_, (), Trimmed>> = (0..cfg.batch_max_size)
         .map(|_| Record::from_value(&cfg.topic, Trimmed(String::new())))
         .collect();
 
     // ~ points to the next free slot in `rec_stash`.  if it reaches
     // `rec_stash.len()` we'll send `rec_stash` to kafka
     let mut next_rec = 0;
+    let mut n_rec = 0;
     loop {
         // ~ send out a batch if it's ready
         if next_rec == rec_stash.len() {
@@ -96,12 +65,13 @@ fn produce_impl_inbatches(
         }
         // ~ ok, we got a line. read the next one in a new buffer
         next_rec += 1;
+        n_rec += 1;
     }
     // ~ flush pending messages - if any
     if next_rec > 0 {
         send_batch(producer, &rec_stash[..next_rec])?;
     }
-    Ok(())
+    Ok(n_rec)
 }
 
 fn send_batch(
@@ -131,7 +101,7 @@ pub async fn handle(cfg: &KafkaConfig, rx: Receiver<Vec<u8>>) {
             Ok(_) => break,
             Err(_) => {
                 error!("producer - failed to load metadata: retrying in 5 seconds");
-                std::thread::sleep(Duration::from_secs(5));
+                tokio::time::sleep(Duration::from_secs(5)).await;
             }
         }
     }
@@ -150,27 +120,36 @@ pub async fn handle(cfg: &KafkaConfig, rx: Receiver<Vec<u8>>) {
 
     loop {
         // Wait the batch wait time to collect messages
-        std::thread::sleep(Duration::from_secs(cfg.batch_wait));
+        tokio::time::sleep(Duration::from_secs(cfg.batch_wait)).await;
         let mut data = Vec::new();
         loop {
-            // Attempt to collect a message from BMP handler
-            // Within a fixed time frame
-            match rx.recv_timeout(Duration::from_millis(100)) {
+            // Collect all of the messages from BMP handler
+            match rx.try_recv() {
                 Ok(d) => data.extend(d),
-                Err(_) => break,
+                Err(TryRecvError::Empty) => break,
+                Err(TryRecvError::Disconnected) => {
+                    log::error!("producer - BMP handler disconnected");
+                    return;
+                }
             }
         }
 
         // If no data was collected within the batch waiting time,
         // continue to the next iteration
         if data.is_empty() {
+            log::info!("producer - produced 0 messages");
             continue;
         }
 
         // Send the collected messages to Kafka in batches
         let mut data = Cursor::new(data);
-        if let Err(e) = produce_impl(&mut producer, &cfg, &mut data) {
-            error!("producer - failed producing messages: {}", e);
-        }
+        match produce_impl(&mut producer, &cfg, &mut data) {
+            Ok(n) => {
+                log::info!("producer - produced {} messages", n)
+            }
+            Err(e) => {
+                error!("producer - failed producing messages: {}", e);
+            }
+        };
     }
 }

@@ -7,7 +7,7 @@ use bgpkit_parser::parser::bmp::messages::{BmpMessage, BmpMessageBody};
 use bytes::Bytes;
 use chrono::Utc;
 use core::net::IpAddr;
-use log::{debug, info, warn};
+use log::{debug, trace, warn};
 use std::io::Result;
 use std::sync::mpsc::Sender;
 use tokio::io::AsyncReadExt;
@@ -72,12 +72,12 @@ async fn process(
 
     match message.message_body {
         BmpMessageBody::PeerUpNotification(body) => {
-            debug!("{:?}", body);
+            trace!("{:?}", body);
             // Simply add the peer if we did not see it before
             router.add_peer(&peer);
         }
         BmpMessageBody::RouteMonitoring(body) => {
-            debug!("{:?}", body);
+            trace!("{:?}", body);
             let potential_updates = decode_updates(body, ts).unwrap_or(Vec::new());
 
             let mut legitimate_updates = Vec::new();
@@ -91,7 +91,7 @@ async fn process(
             let mut buffer = vec![];
             for update in legitimate_updates {
                 let update = format_update(&router, &peer, &update);
-                info!("{:?}", update);
+                debug!("{:?}", update);
                 buffer.extend(update.as_bytes());
                 buffer.extend(b"\n");
             }
@@ -101,7 +101,7 @@ async fn process(
             tx.send(buffer).unwrap();
         }
         BmpMessageBody::PeerDownNotification(body) => {
-            debug!("{:?}", body);
+            trace!("{:?}", body);
             // Remove the peer and the associated prefixes
             // To do so, we start by emiting synthetic withdraw updates
             let mut synthetic_updates = Vec::new();
@@ -120,7 +120,7 @@ async fn process(
             let mut buffer = vec![];
             for update in synthetic_updates {
                 let update = format_update(&router, &peer, &update);
-                info!("{:?}", update);
+                debug!("{:?}", update);
                 buffer.extend(update.as_bytes());
                 buffer.extend(b"\n");
             }
