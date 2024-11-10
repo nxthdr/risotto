@@ -71,6 +71,12 @@ async fn process(
         .entry(router_ip)
         .or_insert_with(|| new_router(router_ip, router_port));
 
+    // Update the router port if it changed due to a reconnect
+    if router_port != router.port {
+        error!("bmp - router port mismatch. updating.",);
+        router.port = router_port;
+    }
+
     match message.message_body {
         BmpMessageBody::PeerUpNotification(body) => {
             trace!("{:?}", body);
@@ -144,6 +150,7 @@ pub async fn handle(socket: &mut TcpStream, db: DB, tx: Sender<Vec<u8>>) {
         let message = match unmarshal_bmp_packet(socket).await {
             Ok(message) => message,
             Err(e) if e.kind() == ErrorKind::NotFound => {
+                // Empty message, continue
                 continue;
             }
             Err(e) if e.kind() == ErrorKind::InvalidData => {
