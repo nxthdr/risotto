@@ -120,7 +120,7 @@ pub async fn handle(cfg: &KafkaConfig, rx: Receiver<Vec<u8>>) {
 
     loop {
         // Wait the batch wait time to collect messages
-        tokio::time::sleep(Duration::from_secs(cfg.batch_wait)).await;
+        tokio::time::sleep(Duration::from_secs(cfg.batch_interval)).await;
         let mut data = Vec::new();
         loop {
             // Collect all of the messages from BMP handler
@@ -137,7 +137,7 @@ pub async fn handle(cfg: &KafkaConfig, rx: Receiver<Vec<u8>>) {
         // If no data was collected within the batch waiting time,
         // continue to the next iteration
         if data.is_empty() {
-            log::info!("producer - produced 0 messages");
+            log::debug!("producer - produced 0 messages");
             continue;
         }
 

@@ -7,13 +7,13 @@ use bgpkit_parser::parser::bmp::messages::{BmpMessage, BmpMessageBody};
 use bytes::Bytes;
 use chrono::Utc;
 use core::net::IpAddr;
-use log::{debug, trace, warn};
-use std::io::Result;
+use log::{debug, error, trace};
+use std::io::{Error, ErrorKind, Result};
 use std::sync::mpsc::Sender;
 use tokio::io::AsyncReadExt;
 use tokio::net::TcpStream;
 
-pub async fn unmarshal_bmp_packet(socket: &mut TcpStream) -> Result<Option<BmpMessage>> {
+pub async fn unmarshal_bmp_packet(socket: &mut TcpStream) -> Result<BmpMessage> {
     // Get minimal packet length to get how many bytes to remove from the socket
     let mut min_buff = [0; 6];
     socket.peek(&mut min_buff).await?;
@@ -23,15 +23,14 @@ pub async fn unmarshal_bmp_packet(socket: &mut TcpStream) -> Result<Option<BmpMe
     let packet_length = usize::try_from(packet_length).unwrap();
 
     if packet_length == 0 {
-        return Ok(None);
+        return Err(Error::new(ErrorKind::NotFound, "BMP message length is 0"));
     }
 
     if packet_length > 4096 {
-        warn!(
-            "bmp - failed to parse BMP message: message too big: {} bytes",
-            packet_length
-        );
-        return Ok(None);
+        return Err(Error::new(
+            ErrorKind::InvalidData,
+            format!("BMP message length is too big: {} bytes", packet_length),
+        ));
     }
 
     // Exactly read the number of bytes found in the BMP message
@@ -42,10 +41,12 @@ pub async fn unmarshal_bmp_packet(socket: &mut TcpStream) -> Result<Option<BmpMe
 
     // Parse the BMP message
     match parse_bmp_msg(&mut bytes) {
-        Ok(message) => Ok(Some(message)),
+        Ok(message) => Ok(message),
         Err(_) => {
-            warn!("bmp - failed to parse BMP message");
-            Ok(None)
+            return Err(Error::new(
+                ErrorKind::InvalidData,
+                format!("failed to parse BMP message"),
+            ));
         }
     }
 }
@@ -140,9 +141,24 @@ pub async fn handle(socket: &mut TcpStream, db: DB, tx: Sender<Vec<u8>>) {
 
     loop {
         // Get BMP message
-        let result = unmarshal_bmp_packet(socket).await.unwrap();
-        let Some(message) = result else {
-            continue;
+        let message = match unmarshal_bmp_packet(socket).await {
+            Ok(message) => message,
+            Err(e) if e.kind() == ErrorKind::NotFound => {
+                continue;
+            }
+            Err(e) if e.kind() == ErrorKind::InvalidData => {
+                error!("bmp - failed to unmarshal BMP message: {}", e);
+                // TODO: potentially we could do better than just closing the connection
+                error!("bmp - closing connection to {}:{}", router_ip, router_port);
+                break;
+            }
+            Err(e) => {
+                // Other errors are unexpected
+                // Close the connection and log the error
+                error!("bmp - failed to unmarshal BMP message: {}", e);
+                error!("bmp - closing connection to {}:{}", router_ip, router_port);
+                break;
+            }
         };
 
         // Process the BMP message

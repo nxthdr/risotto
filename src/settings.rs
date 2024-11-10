@@ -6,7 +6,7 @@ pub struct KafkaConfig {
     pub host: String,
     pub topic: String,
     pub batch_max_size: u64,
-    pub batch_wait: u64,
+    pub batch_interval: u64,
 }
 
 pub fn get_kafka_config(settings: &Config) -> Result<KafkaConfig, Box<dyn Error>> {
@@ -19,13 +19,13 @@ pub fn get_kafka_config(settings: &Config) -> Result<KafkaConfig, Box<dyn Error>
 
     let topic = settings.get_string("kafka.topic")?;
     let batch_max_size = settings.get_int("kafka.batch_max_size").unwrap_or(100) as u64;
-    let batch_wait = settings.get_int("kafka.batch_wait").unwrap_or(1) as u64;
+    let batch_interval = settings.get_int("kafka.batch_interval").unwrap_or(1) as u64;
 
     Ok(KafkaConfig {
         host,
         topic,
         batch_max_size,
-        batch_wait,
+        batch_interval,
     })
 }
 
