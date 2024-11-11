@@ -20,14 +20,8 @@ struct APIPeers {
     peer_addr: IpAddr,
     peer_bgp_id: Ipv4Addr,
     peer_asn: u32,
-    ipv4: APIUpdate,
-    ipv6: APIUpdate,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct APIUpdate {
-    announced: usize,
-    withdrawn: usize,
+    ipv4: usize,
+    ipv6: usize,
 }
 
 #[derive(Clone)]
@@ -53,33 +47,15 @@ async fn format(db: DB) -> Vec<APIRouter> {
         .values()
         .map(|router| {
             let api_peers = router.peers.iter().map(|(peer, updates)| {
-                let (ipv4, ipv6) = updates.iter().fold(
-                    (
-                        APIUpdate {
-                            announced: 0,
-                            withdrawn: 0,
-                        },
-                        APIUpdate {
-                            announced: 0,
-                            withdrawn: 0,
-                        },
-                    ),
-                    |(mut ipv4, mut ipv6), (_, update)| {
-                        let counter = if update.prefix.prefix.addr().is_ipv4() {
-                            &mut ipv4
-                        } else {
-                            &mut ipv6
-                        };
+                let (ipv4, ipv6) = updates.iter().fold((0, 0), |(mut ipv4, mut ipv6), update| {
+                    if update.prefix.addr().is_ipv4() {
+                        ipv4 += 1;
+                    } else {
+                        ipv6 += 1;
+                    };
 
-                        if update.announced {
-                            counter.announced += 1;
-                        } else {
-                            counter.withdrawn += 1;
-                        }
-
-                        (ipv4, ipv6)
-                    },
-                );
+                    (ipv4, ipv6)
+                });
 
                 APIPeers {
                     peer_addr: peer.peer_address,

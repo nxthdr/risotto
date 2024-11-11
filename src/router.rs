@@ -1,7 +1,7 @@
 use bgpkit_parser::models::NetworkPrefix;
 use bgpkit_parser::models::Peer;
 use core::net::IpAddr;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::update::Update;
 
@@ -9,13 +9,13 @@ use crate::update::Update;
 pub struct Router {
     pub addr: IpAddr,
     pub port: u16,
-    pub peers: HashMap<Peer, HashMap<NetworkPrefix, Update>>,
+    pub peers: HashMap<Peer, HashSet<NetworkPrefix>>,
 }
 
 impl Router {
     pub fn add_peer(&mut self, peer: &Peer) {
         if !self.peers.contains_key(peer) {
-            self.peers.insert(peer.clone(), HashMap::new());
+            self.peers.insert(peer.clone(), HashSet::new());
         }
     }
 
@@ -29,12 +29,12 @@ impl Router {
 
         // Will emit the update only if (1) announced + not present or (2) withdrawn + present
         // Which is a XOR operation
-        let emit = update.announced ^ updates.contains_key(&update.prefix);
+        let emit = update.announced ^ updates.contains(&update.prefix);
 
         if update.announced {
-            // Announced prefix: add the update or replace the old one if present
+            // Announced prefix: add the update if not present
             // https://datatracker.ietf.org/doc/html/rfc4271#section-9.1.4
-            updates.insert(update.prefix, update.clone());
+            updates.insert(update.prefix);
         } else {
             // Withdrawn prefix: remove the update if present
             updates.remove(&update.prefix);

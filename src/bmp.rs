@@ -1,7 +1,7 @@
 use crate::db::DB;
 use crate::router::new_router;
-use crate::update::{decode_updates, format_update};
-use bgpkit_parser::models::Peer;
+use crate::update::{decode_updates, format_update, Update};
+use bgpkit_parser::models::{Origin, Peer};
 use bgpkit_parser::parse_bmp_msg;
 use bgpkit_parser::parser::bmp::messages::{BmpMessage, BmpMessageBody};
 use bytes::Bytes;
@@ -102,7 +102,6 @@ async fn process(
                 buffer.extend(update.as_bytes());
                 buffer.extend(b"\n");
             }
-            // let buffer = BufReader::new(buffer);
 
             // Sent to the event pipeline
             tx.send(buffer).unwrap();
@@ -112,11 +111,16 @@ async fn process(
             // Remove the peer and the associated prefixes
             // To do so, we start by emiting synthetic withdraw updates
             let mut synthetic_updates = Vec::new();
-            for (_, update_to_withdrawn) in router.peers[&peer].clone() {
-                let mut update_to_withdrawn = update_to_withdrawn.clone();
-                update_to_withdrawn.announced = false;
-                update_to_withdrawn.timestamp = Utc::now();
-                update_to_withdrawn.synthetic = true;
+            for prefix in router.peers[&peer].clone() {
+                let update_to_withdrawn = Update {
+                    prefix,
+                    announced: false,
+                    origin: Origin::INCOMPLETE,
+                    path: None,
+                    communities: vec![],
+                    timestamp: Utc::now(),
+                    synthetic: true,
+                };
 
                 synthetic_updates.push(update_to_withdrawn);
             }

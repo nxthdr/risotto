@@ -43,9 +43,7 @@ fn set_logging(cli: &CLI) {
                 record.args()
             )
         })
-        .filter(Some("bgpkit_parser"), log::LevelFilter::Off)
-        .filter(Some("tokio_graceful"), log::LevelFilter::Off)
-        .filter_level(cli.verbose.log_level_filter())
+        .filter_module("risotto", cli.verbose.log_level_filter())
         .init();
 }
 
