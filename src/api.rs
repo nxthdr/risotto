@@ -27,14 +27,10 @@ struct APIPeers {
 #[derive(Clone)]
 struct AppState {
     db: DB,
-    // prometheus_handle: Arc<PrometheusHandle>,
 }
 
 pub fn app(db: DB) -> Router {
-    let app_state = AppState {
-        db: db.clone(),
-        // prometheus_handle: Arc::new(PrometheusBuilder::new().install_recorder().unwrap()),
-    };
+    let app_state = AppState { db: db.clone() };
 
     Router::new()
         .route("/", get(root).with_state(app_state.clone()))

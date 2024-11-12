@@ -1,6 +1,6 @@
 services:
   bird_10:
-    build: ./bird
+    image: ghcr.io/nxthdr/bird:main
     user: root
     cap_add:
       - NET_ADMIN
@@ -13,7 +13,7 @@ services:
         ipv4_address: 10.0.0.10
   
   bird_20:
-    build: ./bird
+    image: ghcr.io/nxthdr/bird:main
     user: root
     cap_add:
       - NET_ADMIN
