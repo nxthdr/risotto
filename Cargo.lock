@@ -627,6 +627,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "crossbeam-queue"
+version = "0.3.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "df0346b5d5e76ac2fe4e327c5fd1118d6be7c51dfb18f9b7922923f287471e35"
+dependencies = [
+ "crossbeam-utils",
+]
+
+[[package]]
 name = "crossbeam-utils"
 version = "0.8.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1949,6 +1958,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "redis_pool"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4c68892c3833afeba239a029bedd72857549cc78c2bfc5f24d5e81486f2ce0e6"
+dependencies = [
+ "async-trait",
+ "crossbeam-queue",
+ "redis",
+ "thiserror",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "redox_syscall"
 version = "0.5.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2087,6 +2110,7 @@ dependencies = [
  "metrics-exporter-prometheus",
  "prefix-trie",
  "redis",
+ "redis_pool",
  "serde",
  "tokio",
  "tokio-graceful",

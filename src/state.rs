@@ -1,7 +1,8 @@
 use bgpkit_parser::models::NetworkPrefix;
 use chrono::Utc;
 use core::net::IpAddr;
-use redis::aio::MultiplexedConnection as Mu;
+// use redis_pool::{RedisPool, SingleRedisPool};
+use redis::aio::MultiplexedConnection;
 use std::error::Error;
 use std::sync::Arc;
 
@@ -9,13 +10,13 @@ use crate::settings::StateConfig;
 use crate::update::Update;
 
 pub struct State {
-    pub connection: Mu,
+    pub connection: MultiplexedConnection,
 }
 
 pub async fn new_state(state_config: &StateConfig) -> Result<Arc<State>, Box<dyn Error>> {
     let client = redis::Client::open(format!("redis://{}/", state_config.host))?;
-    let con = client.get_multiplexed_async_connection().await?;
-    Ok(Arc::new(State { connection: con }))
+    let connection = client.get_multiplexed_async_connection().await?;
+    Ok(Arc::new(State { connection }))
 }
 
 impl State {
@@ -74,13 +75,11 @@ impl State {
         update: &Update,
     ) -> Result<bool, Box<dyn Error>> {
         let key = format!("risotto|{}|{}|{}", router_addr, peer_addr, update.prefix);
-        let updates = self
-            .keys(&format!("risotto|{}|{}|*", router_addr, peer_addr))
-            .await?;
+        let present = self.get(&key).await.is_ok();
 
         // Will emit the update only if (announced and not present) or  (not announced and present)
         // Which is a XOR operation
-        let emit = update.announced ^ updates.contains(&key);
+        let emit = update.announced ^ present;
 
         if update.announced {
             // Store the update, overwriting if present already with the new timestamp
@@ -100,36 +99,42 @@ impl State {
 
     // Private method for Redis KEYS
     async fn keys(&self, pattern: &str) -> Result<Vec<String>, Box<dyn Error>> {
-        let mut con = self.connection.clone();
+        let mut connection = self.connection.clone();
         let res = redis::cmd("KEYS")
             .arg(pattern)
-            .query_async(&mut con)
+            .query_async(&mut connection)
             .await?;
         Ok(res)
     }
 
     // Private method for Redis GET
-    async fn _get(&self, key: &str) -> Result<String, Box<dyn Error>> {
-        let mut con = self.connection.clone();
-        let res = redis::cmd("GET").arg(key).query_async(&mut con).await?;
+    async fn get(&self, key: &str) -> Result<String, Box<dyn Error>> {
+        let mut connection = self.connection.clone();
+        let res = redis::cmd("GET")
+            .arg(key)
+            .query_async(&mut connection)
+            .await?;
         Ok(res)
     }
 
     // Private method for Redis SET
     async fn set(&self, key: &str, value: &str) -> Result<(), Box<dyn Error>> {
-        let mut con = self.connection.clone();
+        let mut connection = self.connection.clone();
         redis::cmd("SET")
             .arg(key)
             .arg(value)
-            .exec_async(&mut con)
+            .exec_async(&mut connection)
             .await?;
         Ok(())
     }
 
     // Private method for Redis DEL
     async fn del(&self, key: &str) -> Result<(), Box<dyn Error>> {
-        let mut con = self.connection.clone();
-        redis::cmd("DEL").arg(key).exec_async(&mut con).await?;
+        let mut connection = self.connection.clone();
+        redis::cmd("DEL")
+            .arg(key)
+            .exec_async(&mut connection)
+            .await?;
         Ok(())
     }
 }

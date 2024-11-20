@@ -22,6 +22,7 @@ metrics = "0.24.0"
 metrics-exporter-prometheus = "0.16.0"
 prefix-trie = "0.5.0"
 redis = { version = "0.27.5", features = ["tokio-comp"] }
+redis_pool = "0.6.0"
 serde = { version = "1.0.213", features = ["derive"] }
 tokio = { version = "1.37.0", features = ["full"] }
 tokio-graceful = "0.2.2"

@@ -68,8 +68,6 @@ async fn process(
     match message.message_body {
         BmpMessageBody::PeerUpNotification(body) => {
             trace!("{:?}", body);
-            // Simply add the peer if we did not see it before
-            // state.add_peer(&peer);
         }
         BmpMessageBody::RouteMonitoring(body) => {
             trace!("{:?}", body);
@@ -120,7 +118,7 @@ async fn process(
                 synthetic_updates.push(update_to_withdrawn);
             }
 
-            // And we then update the internal state
+            // And we then update the state
             state
                 .remove_updates(&router_addr, &peer.peer_address)
                 .await

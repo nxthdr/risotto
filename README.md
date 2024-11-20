@@ -39,6 +39,10 @@ kafka:
   host: kafka.example.com
   port: 9092
   topic: bgp-updates
+
+state:
+  address: 0.0.0.0
+  port: 6379
 ```
 
 * Run your Docker container
