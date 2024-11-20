@@ -34,6 +34,12 @@ services:
       testbed:
         ipv4_address: 10.0.0.100
 
+  redis:
+    image: redis:latest
+    networks:
+      testbed:
+        ipv4_address: 10.0.0.101
+
   risotto:
     build: ..
     command: -v --config /config/risotto

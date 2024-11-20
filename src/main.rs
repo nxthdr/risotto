@@ -1,9 +1,8 @@
 mod api;
 mod bmp;
-mod db;
 mod producer;
-mod router;
 mod settings;
+mod state;
 mod update;
 
 use chrono::Local;
@@ -20,7 +19,7 @@ use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio_graceful::Shutdown;
 
-use crate::db::DB;
+use crate::state::State;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -56,7 +55,7 @@ fn load_settings(config_path: &str) -> Arc<Config> {
     Arc::new(cfg)
 }
 
-async fn api_handler(db: DB, cfg: Arc<Config>) {
+async fn api_handler(state: Arc<State>, cfg: Arc<Config>) {
     let address = cfg.get_string("api.address").unwrap();
     let port = cfg.get_int("api.port").unwrap();
     let host = settings::host(address, port, false);
@@ -64,12 +63,13 @@ async fn api_handler(db: DB, cfg: Arc<Config>) {
     debug!("api - binding listener to {}", host);
 
     let api_listener = TcpListener::bind(host).await.unwrap();
-    let app = api::app(db.clone());
+    let app = api::app(state.clone());
 
     axum::serve(api_listener, app).await.unwrap();
 }
 
-async fn bmp_handler(db: DB, cfg: Arc<Config>, tx: Sender<Vec<u8>>) {
+async fn bmp_handler(state: Arc<State>, cfg: Arc<Config>, tx: Sender<Vec<u8>>) {
+    // TODO: Move this to settings.rs
     let address = cfg.get_string("bmp.address").unwrap();
     let port = cfg.get_int("bmp.port").unwrap();
     let host = settings::host(address, port, false);
@@ -79,12 +79,12 @@ async fn bmp_handler(db: DB, cfg: Arc<Config>, tx: Sender<Vec<u8>>) {
     let bmp_listener = TcpListener::bind(host).await.unwrap();
     loop {
         let (mut bmp_socket, _) = bmp_listener.accept().await.unwrap();
-        let bmp_db = db.clone();
+        let bmp_state = state.clone();
         let tx = tx.clone();
 
         // We spawn a new task for each BMP connection
         tokio::spawn(async move {
-            bmp::handle(&mut bmp_socket, bmp_db.clone(), tx).await;
+            bmp::handle(&mut bmp_socket, bmp_state.clone(), tx).await;
         });
     }
 }
@@ -100,7 +100,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let cli = CLI::parse();
 
     let cfg = load_settings(&cli.config);
-    let db = db::new_db().await?;
+    let state_config = settings::get_state_config(&cfg).unwrap();
+    let state = state::new_state(&state_config).await?;
     let shutdown: Shutdown = Shutdown::default();
 
     set_logging(&cli);
@@ -108,8 +109,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // MPSC channel to communicate between BMP tasks and producer task
     let (tx, rx) = channel();
 
-    let api_task = shutdown.spawn_task(api_handler(db.clone(), cfg.clone()));
-    let bmp_task = shutdown.spawn_task(bmp_handler(db.clone(), cfg.clone(), tx));
+    let api_task = shutdown.spawn_task(api_handler(state.clone(), cfg.clone()));
+    let bmp_task = shutdown.spawn_task(bmp_handler(state.clone(), cfg.clone(), tx));
     let producer_task = shutdown.spawn_task(producer_handler(cfg.clone(), rx));
 
     tokio::select! {

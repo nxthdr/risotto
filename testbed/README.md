@@ -12,7 +12,7 @@ Both routers are configured to send BMP messages to the Risotto instance accessi
 * Start the testbed
 
 ```sh
-docker compose up --build --force-recreate
+docker compose up --build --force-recreate --renew-anon-volumes
 ```
 
 * You can check Risotto state

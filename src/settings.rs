@@ -29,6 +29,18 @@ pub fn get_kafka_config(settings: &Config) -> Result<KafkaConfig, Box<dyn Error>
     })
 }
 
+pub struct StateConfig {
+    pub host: String,
+}
+
+pub fn get_state_config(settings: &Config) -> Result<StateConfig, Box<dyn Error>> {
+    let redis_addr = settings.get_string("state.address")?;
+    let redis_port = settings.get_int("state.port")?;
+    let host = host(redis_addr, redis_port, true);
+
+    Ok(StateConfig { host })
+}
+
 pub fn host(address: String, port: i64, accept_fqdn: bool) -> String {
     let host = match address.parse::<IpAddr>() {
         Ok(ip) => {

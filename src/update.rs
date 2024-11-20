@@ -1,6 +1,5 @@
 use chrono::{DateTime, MappedLocalTime, TimeZone, Utc};
 
-use crate::router::Router;
 use bgpkit_parser::bmp::messages::RouteMonitoring;
 use bgpkit_parser::models::*;
 use core::net::IpAddr;
@@ -134,7 +133,12 @@ fn map_to_ipv6(ip: IpAddr) -> IpAddr {
 
 // Returns a CSV line corresponding to this schema
 // timestamp,router_addr,router_port,peer_addr,peer_bgp_id,peer_asn,prefix_addr,prefix_len,origin,announced,synthetic,path,communities
-pub fn format_update(router: &Router, peer: &Peer, update: &Update) -> String {
+pub fn format_update(
+    router_addr: IpAddr,
+    router_port: u16,
+    peer: &Peer,
+    update: &Update,
+) -> String {
     let as_path_str = construct_as_path(update.path.clone())
         .iter()
         .map(|x| x.to_string())
@@ -151,8 +155,8 @@ pub fn format_update(router: &Router, peer: &Peer, update: &Update) -> String {
 
     let mut row: Vec<String> = Vec::new();
     row.push(format!("{}", update.timestamp.timestamp_millis()));
-    row.push(format!("{}", map_to_ipv6(router.addr)));
-    row.push(format!("{}", router.port));
+    row.push(format!("{}", map_to_ipv6(router_addr)));
+    row.push(format!("{}", router_port));
     row.push(format!("{}", map_to_ipv6(peer.peer_address)));
     row.push(format!("{}", peer.peer_bgp_id));
     row.push(format!("{}", peer.peer_asn));

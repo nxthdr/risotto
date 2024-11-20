@@ -1,5 +1,4 @@
-use crate::db::DB;
-use crate::router::new_router;
+use crate::state::State;
 use crate::update::{decode_updates, format_update, Update};
 use bgpkit_parser::models::{Origin, Peer};
 use bgpkit_parser::parse_bmp_msg;
@@ -10,6 +9,7 @@ use core::net::IpAddr;
 use log::{debug, error, trace};
 use std::io::{Error, ErrorKind, Result};
 use std::sync::mpsc::Sender;
+use std::sync::Arc;
 use tokio::io::AsyncReadExt;
 use tokio::net::TcpStream;
 
@@ -52,9 +52,9 @@ pub async fn unmarshal_bmp_packet(socket: &mut TcpStream) -> Result<BmpMessage> 
 }
 
 async fn process(
-    db: DB,
+    state: Arc<State>,
     tx: Sender<Vec<u8>>,
-    router_ip: IpAddr,
+    router_addr: IpAddr,
     router_port: u16,
     message: BmpMessage,
 ) {
@@ -65,23 +65,11 @@ async fn process(
     let peer = Peer::new(pph.peer_bgp_id, pph.peer_ip, pph.peer_asn);
     let ts = (pph.timestamp * 1000.0) as i64;
 
-    // Fetch router from the DB
-    let mut routers = db.lock().unwrap();
-    let router = routers
-        .entry(router_ip)
-        .or_insert_with(|| new_router(router_ip, router_port));
-
-    // Update the router port if it changed due to a reconnect
-    if router_port != router.port {
-        error!("bmp - router port mismatch. updating.",);
-        router.port = router_port;
-    }
-
     match message.message_body {
         BmpMessageBody::PeerUpNotification(body) => {
             trace!("{:?}", body);
             // Simply add the peer if we did not see it before
-            router.add_peer(&peer);
+            // state.add_peer(&peer);
         }
         BmpMessageBody::RouteMonitoring(body) => {
             trace!("{:?}", body);
@@ -89,7 +77,10 @@ async fn process(
 
             let mut legitimate_updates = Vec::new();
             for update in potential_updates {
-                let is_updated = router.update(&peer, &update);
+                let is_updated = state
+                    .update(&router_addr, &peer.peer_address, &update)
+                    .await
+                    .unwrap();
                 if is_updated {
                     legitimate_updates.push(update);
                 }
@@ -97,7 +88,7 @@ async fn process(
 
             let mut buffer = vec![];
             for update in legitimate_updates {
-                let update = format_update(&router, &peer, &update);
+                let update = format_update(router_addr, router_port, &peer, &update);
                 debug!("{:?}", update);
                 buffer.extend(update.as_bytes());
                 buffer.extend(b"\n");
@@ -111,7 +102,11 @@ async fn process(
             // Remove the peer and the associated prefixes
             // To do so, we start by emiting synthetic withdraw updates
             let mut synthetic_updates = Vec::new();
-            for prefix in router.peers[&peer].clone() {
+            let updates = state
+                .get_updates(&router_addr, &peer.peer_address)
+                .await
+                .unwrap();
+            for prefix in updates {
                 let update_to_withdrawn = Update {
                     prefix,
                     announced: false,
@@ -126,11 +121,14 @@ async fn process(
             }
 
             // And we then update the internal state
-            router.remove_peer(&peer);
+            state
+                .remove_updates(&router_addr, &peer.peer_address)
+                .await
+                .unwrap();
 
             let mut buffer = vec![];
             for update in synthetic_updates {
-                let update = format_update(&router, &peer, &update);
+                let update = format_update(router_addr, router_port, &peer, &update);
                 debug!("{:?}", update);
                 buffer.extend(update.as_bytes());
                 buffer.extend(b"\n");
@@ -143,7 +141,7 @@ async fn process(
     }
 }
 
-pub async fn handle(socket: &mut TcpStream, db: DB, tx: Sender<Vec<u8>>) {
+pub async fn handle(socket: &mut TcpStream, state: Arc<State>, tx: Sender<Vec<u8>>) {
     // Get router IP information
     let socket_info = socket.peer_addr().unwrap();
     let router_ip = socket_info.ip();
@@ -173,10 +171,10 @@ pub async fn handle(socket: &mut TcpStream, db: DB, tx: Sender<Vec<u8>>) {
         };
 
         // Process the BMP message
-        let process_db = db.clone();
+        let process_state = state.clone();
         let process_tx = tx.clone();
         tokio::spawn(async move {
-            process(process_db, process_tx, router_ip, router_port, message).await;
+            process(process_state, process_tx, router_ip, router_port, message).await;
         });
     }
 }

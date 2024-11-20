@@ -98,7 +98,10 @@ pub async fn handle(cfg: &KafkaConfig, rx: Receiver<Vec<u8>>) {
     // Wait until the metadata we succeed to reach the Kafka brokers
     loop {
         match client.load_metadata(&[cfg.topic.to_owned()]) {
-            Ok(_) => break,
+            Ok(_) => {
+                log::debug!("producer - metadata loaded");
+                break;
+            }
             Err(_) => {
                 error!("producer - failed to load metadata: retrying in 5 seconds");
                 tokio::time::sleep(Duration::from_secs(5)).await;
