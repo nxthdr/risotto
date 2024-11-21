@@ -11,7 +11,7 @@ bgpkit-parser = "0.10.9"
 bytes = "1.6.0"
 chrono = "0.4.38"
 clap = { version = "4.5.20", features = ["derive"] }
-clap-verbosity-flag = "2.2.2"
+clap-verbosity-flag = "3.0.0"
 config = "0.14.1"
 env_logger = "0.11.5"
 hex = "0.4.3"
