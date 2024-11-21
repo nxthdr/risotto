@@ -45,6 +45,8 @@ services:
     command: -v --config /config/risotto
     volumes:
       - ./config/risotto/risotto.yml:/config/risotto.yml
+    ports:
+      - "3000:3000"
     networks:
       testbed:
         ipv4_address: 10.0.0.200

@@ -18,13 +18,13 @@ docker compose up --build --force-recreate --renew-anon-volumes
 * You can check Risotto state
 
 ```sh
-curl -s http://10.0.0.100:3000 |jq
+curl -s http://127.0.0.1:3000 |jq
 ```
 
 * Or get Prometheus metrics
 
 ```sh
-curl -s http://10.0.0.100:3000/metrics
+curl -s http://127.0.0.1:3000/metrics
 ```
 
 * You can exec into one router container to interact with bird
