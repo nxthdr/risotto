@@ -6,7 +6,6 @@ use bgpkit_parser::parser::bmp::messages::{BmpMessage, BmpMessageBody};
 use bytes::Bytes;
 use chrono::Utc;
 use core::net::IpAddr;
-use log::{debug, error, trace, warn};
 use std::io::{Error, ErrorKind, Result};
 use std::sync::mpsc::Sender;
 use tokio::io::AsyncReadExt;
@@ -68,17 +67,15 @@ async fn process(
 
     match message.message_body {
         BmpMessageBody::PeerUpNotification(body) => {
-            trace!("{:?}", body);
+            log::trace!("{:?}", body);
         }
         BmpMessageBody::RouteMonitoring(body) => {
-            trace!("{:?}", body);
+            log::trace!("{:?}", body);
             let potential_updates = decode_updates(body, ts).unwrap_or(Vec::new());
 
             let mut legitimate_updates = Vec::new();
             for update in potential_updates {
-                let is_updated = state
-                    .update(&router_addr, &peer.peer_address, &update)
-                    .unwrap();
+                let is_updated = state.update(&router_addr, &peer, &update).unwrap();
                 if is_updated {
                     legitimate_updates.push(update);
                 }
@@ -87,7 +84,7 @@ async fn process(
             let mut buffer = vec![];
             for update in legitimate_updates {
                 let update = format_update(router_addr, router_port, &peer, &update);
-                debug!("{:?}", update);
+                log::debug!("{:?}", update);
                 buffer.extend(update.as_bytes());
                 buffer.extend(b"\n");
             }
@@ -96,11 +93,11 @@ async fn process(
             tx.send(buffer).unwrap();
         }
         BmpMessageBody::PeerDownNotification(body) => {
-            trace!("{:?}", body);
+            log::trace!("{:?}", body);
             // Remove the peer and the associated prefixes
             // To do so, we start by emiting synthetic withdraw updates
             let mut synthetic_updates = Vec::new();
-            let updates = state.get_updates(&router_addr, &peer.peer_address).unwrap();
+            let updates = state.get_updates(&router_addr, &peer).unwrap();
             for prefix in updates {
                 let update_to_withdrawn = Update {
                     prefix,
@@ -116,14 +113,12 @@ async fn process(
             }
 
             // And we then update the state
-            state
-                .remove_updates(&router_addr, &peer.peer_address)
-                .unwrap();
+            state.remove_updates(&router_addr, &peer).unwrap();
 
             let mut buffer = vec![];
             for update in synthetic_updates {
                 let update = format_update(router_addr, router_port, &peer, &update);
-                debug!("{:?}", update);
+                log::debug!("{:?}", update);
                 buffer.extend(update.as_bytes());
                 buffer.extend(b"\n");
             }
@@ -151,14 +146,25 @@ pub async fn handle(socket: &mut TcpStream, state: AsyncState, tx: Sender<Vec<u8
             }
             Err(e) if e.kind() == ErrorKind::InvalidData => {
                 // Invalid message, continue without processing
-                warn!("bmp - invalid BMP message: {}", e);
-                continue;
+                // From what I can see, it's often because of a packet length issue
+                // So for now, we will close the connection
+                log::error!("bmp - invalid BMP message: {}", e);
+                log::error!(
+                    "bmp - closing connection with {}:{}",
+                    router_ip,
+                    router_port
+                );
+                break;
             }
             Err(e) => {
                 // Other errors are unexpected
-                // Close the connection and log the error
-                error!("bmp - failed to unmarshal BMP message: {}", e);
-                error!("bmp - closing connection to {}:{}", router_ip, router_port);
+                // Close the connection
+                log::error!("bmp - failed to unmarshal BMP message: {}", e);
+                log::error!(
+                    "bmp - closing connection with {}:{}",
+                    router_ip,
+                    router_port
+                );
                 break;
             }
         };

@@ -95,12 +95,16 @@ async fn producer_handler(cfg: Arc<Config>, rx: Receiver<Vec<u8>>) {
     producer::handle(&cfg, rx).await;
 }
 
-async fn state_handler(state: AsyncState, cfg: Arc<Config>) {
+async fn state_handler(state: AsyncState, cfg: Arc<Config>, tx: Sender<Vec<u8>>) {
     let cfg = settings::get_state_config(&cfg).unwrap();
-    loop {
-        tokio::time::sleep(Duration::from_secs(cfg.interval)).await;
-        state::dump(state.clone(), cfg.clone());
-    }
+
+    let spawn_state = state.clone();
+    let spawn_cfg = cfg.clone();
+    tokio::spawn(async move {
+        state::startup_withdraws_handler(spawn_state.clone(), spawn_cfg.clone(), tx).await;
+    });
+
+    state::dump_handler(state.clone(), cfg.clone()).await;
 }
 
 #[tokio::main]
@@ -121,9 +125,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let (tx, rx) = channel();
 
     let api_task = shutdown.spawn_task(api_handler(state.clone(), cfg.clone()));
-    let bmp_task = shutdown.spawn_task(bmp_handler(state.clone(), cfg.clone(), tx));
+    let bmp_task = shutdown.spawn_task(bmp_handler(state.clone(), cfg.clone(), tx.clone()));
     let producer_task = shutdown.spawn_task(producer_handler(cfg.clone(), rx));
-    let state_task = shutdown.spawn_task(state_handler(state.clone(), cfg.clone()));
+    let state_task = shutdown.spawn_task(state_handler(state.clone(), cfg.clone(), tx.clone()));
 
     tokio::select! {
         _ = shutdown.shutdown_with_limit(Duration::from_secs(1)) => {

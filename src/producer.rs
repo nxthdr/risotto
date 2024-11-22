@@ -1,14 +1,13 @@
-use std::time::Duration;
-
-use crate::settings::KafkaConfig;
 use kafka::client::{Compression, DEFAULT_CONNECTION_IDLE_TIMEOUT_MILLIS};
 use kafka::producer::{AsBytes, Producer, Record, RequiredAcks, DEFAULT_ACK_TIMEOUT_MILLIS};
-use log::error;
 use std::error::Error;
 use std::io::BufRead;
 use std::io::Cursor;
 use std::ops::{Deref, DerefMut};
 use std::sync::mpsc::{Receiver, TryRecvError};
+use std::time::Duration;
+
+use crate::settings::KafkaConfig;
 
 struct Trimmed(String);
 
@@ -36,8 +35,6 @@ fn produce_impl(
     cfg: &KafkaConfig,
     data: &mut dyn BufRead,
 ) -> Result<usize, Box<dyn Error>> {
-    // assert!(cfg.batch_max_size > 1);
-
     // ~ a buffer of prepared records to be send in a batch to Kafka
     // ~ in the loop following, we'll only modify the 'value' of the
     // cached records
@@ -103,7 +100,7 @@ pub async fn handle(cfg: &KafkaConfig, rx: Receiver<Vec<u8>>) {
                 break;
             }
             Err(_) => {
-                error!("producer - failed to load metadata: retrying in 5 seconds");
+                log::error!("producer - failed to load metadata: retrying in 5 seconds");
                 tokio::time::sleep(Duration::from_secs(5)).await;
             }
         }
@@ -151,7 +148,7 @@ pub async fn handle(cfg: &KafkaConfig, rx: Receiver<Vec<u8>>) {
                 log::info!("producer - produced {} messages", n)
             }
             Err(e) => {
-                error!("producer - failed producing messages: {}", e);
+                log::error!("producer - failed producing messages: {}", e);
             }
         };
     }

@@ -14,4 +14,5 @@ kafka:
 
 state:
   path: /app/dump.txt
-  interval: 1
+  save_interval: 1
+  startup_withdraws_time: 20

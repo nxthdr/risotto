@@ -1,11 +1,16 @@
-use bgpkit_parser::models::NetworkPrefix;
+use bgpkit_parser::models::{NetworkPrefix, Origin, Peer as BGPkitPeer};
+use chrono::Utc;
 use core::net::IpAddr;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
+use std::hash::{Hash, Hasher};
+use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use crate::settings::StateConfig;
+use crate::update::format_update;
 use crate::update::Update;
 
 pub type AsyncState = Arc<Mutex<State>>;
@@ -54,18 +59,18 @@ impl State {
     pub fn get_updates(
         &self,
         router_addr: &IpAddr,
-        peer_addr: &IpAddr,
+        peer: &BGPkitPeer,
     ) -> Result<Vec<NetworkPrefix>, Box<dyn Error>> {
-        Ok(self.store.get_updates(router_addr, peer_addr))
+        Ok(self.store.get_updates(router_addr, peer))
     }
 
     // Remove all updates for a specific router and peer
     pub fn remove_updates(
         &mut self,
         router_addr: &IpAddr,
-        peer_addr: &IpAddr,
+        peer: &BGPkitPeer,
     ) -> Result<(), Box<dyn Error>> {
-        self.store.remove_peer(router_addr, peer_addr);
+        self.store.remove_peer(router_addr, peer);
         Ok(())
     }
 
@@ -73,10 +78,10 @@ impl State {
     pub fn update(
         &mut self,
         router_addr: &IpAddr,
-        peer_addr: &IpAddr,
+        peer: &BGPkitPeer,
         update: &Update,
     ) -> Result<bool, Box<dyn Error>> {
-        let emit = self.store.update(router_addr, peer_addr, update);
+        let emit = self.store.update(router_addr, peer, update);
         Ok(emit)
     }
 }
@@ -104,35 +109,67 @@ impl MemoryStore {
     fn get_all(&self) -> Vec<(IpAddr, IpAddr, NetworkPrefix)> {
         let mut res = Vec::new();
         for (router_addr, router) in &self.routers {
-            for (peer_addr, updates) in &router.peers {
-                for update in updates {
-                    res.push((router_addr.clone(), peer_addr.clone(), update.clone()));
+            for (peer_addr, peer) in &router.peers {
+                for update in &peer.updates {
+                    res.push((
+                        router_addr.clone(),
+                        peer_addr.clone(),
+                        update.prefix.clone(),
+                    ));
                 }
             }
         }
         res
     }
 
-    fn get_updates(&self, router_addr: &IpAddr, peer_addr: &IpAddr) -> Vec<NetworkPrefix> {
+    fn get_updates(&self, router_addr: &IpAddr, peer: &BGPkitPeer) -> Vec<NetworkPrefix> {
         let router = self.routers.get(router_addr).unwrap();
-        let updates = router.peers.get(peer_addr).unwrap();
-        updates.iter().cloned().collect()
+        let updates = router.peers.get(&peer.peer_address).unwrap();
+        updates
+            .updates
+            .iter()
+            .map(|timed_prefix| timed_prefix.prefix.clone())
+            .collect()
     }
 
-    fn remove_peer(&mut self, router_addr: &IpAddr, peer_addr: &IpAddr) {
+    fn remove_peer(&mut self, router_addr: &IpAddr, peer: &BGPkitPeer) {
         let router = self._get_router(router_addr);
-        router.remove_peer(peer_addr);
+        router.remove_peer(peer);
     }
 
-    fn update(&mut self, router_addr: &IpAddr, peer_addr: &IpAddr, update: &Update) -> bool {
+    fn update(&mut self, router_addr: &IpAddr, peer: &BGPkitPeer, update: &Update) -> bool {
         let router = self._get_router(router_addr);
-        router.update(peer_addr, update)
+        router.update(peer, update)
     }
+}
+
+#[derive(Serialize, Deserialize, Eq, Clone)]
+struct TimedPrefix {
+    prefix: NetworkPrefix,
+    timestamp: i64,
+}
+
+impl PartialEq for TimedPrefix {
+    fn eq(&self, other: &Self) -> bool {
+        self.prefix == other.prefix
+    }
+}
+
+impl Hash for TimedPrefix {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.prefix.hash(state);
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+struct Peer {
+    details: BGPkitPeer,
+    updates: HashSet<TimedPrefix>,
 }
 
 #[derive(Serialize, Deserialize)]
 struct Router {
-    peers: HashMap<IpAddr, HashSet<NetworkPrefix>>,
+    peers: HashMap<IpAddr, Peer>,
 }
 
 impl Router {
@@ -142,31 +179,109 @@ impl Router {
         }
     }
 
-    fn add_peer(&mut self, peer: &IpAddr) {
-        if !self.peers.contains_key(peer) {
-            self.peers.insert(peer.clone(), HashSet::new());
+    fn add_peer(&mut self, peer: &BGPkitPeer) {
+        if !self.peers.contains_key(&peer.peer_address) {
+            self.peers.insert(
+                peer.peer_address.clone(),
+                Peer {
+                    details: *peer,
+                    updates: HashSet::new(),
+                },
+            );
         }
     }
 
-    fn remove_peer(&mut self, peer: &IpAddr) {
-        self.peers.remove(peer);
+    fn remove_peer(&mut self, peer: &BGPkitPeer) {
+        self.peers.remove(&peer.peer_address);
     }
 
-    fn update(&mut self, peer: &IpAddr, update: &Update) -> bool {
+    fn update(&mut self, peer: &BGPkitPeer, update: &Update) -> bool {
         self.add_peer(&peer);
-        let updates = self.peers.get_mut(&peer).unwrap();
+        let peer = self.peers.get_mut(&peer.peer_address).unwrap();
+
+        let now: i64 = chrono::Utc::now().timestamp_millis();
+        let timed_prefix = TimedPrefix {
+            prefix: update.prefix.clone(),
+            timestamp: now,
+        };
 
         // Will emit the update only if (1) announced + not present or (2) withdrawn + present
         // Which is a XOR operation
-        let emit = update.announced ^ updates.contains(&update.prefix);
+        let emit = update.announced ^ peer.updates.contains(&timed_prefix);
 
         if update.announced {
             // Announced prefix: add the update or overwrite it if present
-            updates.insert(update.prefix);
+            peer.updates.insert(timed_prefix);
         } else {
             // Withdrawn prefix: remove the update if present
-            updates.remove(&update.prefix);
+            peer.updates.remove(&timed_prefix);
         }
         return emit;
+    }
+}
+
+pub async fn startup_withdraws_handler(state: AsyncState, cfg: StateConfig, tx: Sender<Vec<u8>>) {
+    let startup = chrono::Utc::now();
+
+    tokio::time::sleep(Duration::from_secs(cfg.sw_time)).await;
+
+    log::info!(
+        "state - startup withdraws handler - removing updates older than {}",
+        startup
+    );
+    let mut synthetic_updates = Vec::new();
+    let mut state_lock: std::sync::MutexGuard<'_, State> = state.lock().unwrap();
+    for (router_addr, router) in &mut state_lock.store.routers {
+        for (_, peer) in &mut router.peers {
+            for update in peer.updates.clone() {
+                if update.timestamp < startup.timestamp_millis() {
+                    // This update has been re-announced after startup
+                    // Emit a synthetic withdraw update
+                    synthetic_updates.push((
+                        router_addr.clone(),
+                        peer.clone(),
+                        Update {
+                            prefix: update.prefix.clone(),
+                            announced: false,
+                            origin: Origin::INCOMPLETE,
+                            path: None,
+                            communities: vec![],
+                            timestamp: Utc::now(),
+                            synthetic: true,
+                        },
+                    ));
+                }
+            }
+        }
+    }
+
+    let mut buffer: Vec<u8> = vec![];
+    for (router_addr, peer, update) in &synthetic_updates {
+        let update_str = format_update(*router_addr, 0, &peer.details, &update);
+        log::debug!("{:?}", update_str);
+        buffer.extend(update_str.as_bytes());
+        buffer.extend(b"\n");
+
+        // Remove the update from the state
+        state_lock
+            .store
+            .update(&router_addr, &peer.details, &update);
+    }
+
+    drop(state_lock);
+    log::info!(
+        "state - startup withdraws handler - emitting {} synthetic withdraw updates",
+        synthetic_updates.len()
+    );
+
+    // Sent to the event pipeline
+    tx.send(buffer).unwrap();
+}
+
+pub async fn dump_handler(state: AsyncState, cfg: StateConfig) {
+    loop {
+        tokio::time::sleep(Duration::from_secs(cfg.interval)).await;
+        log::debug!("state - dump handler - dumping state to {}", cfg.path);
+        dump(state.clone(), cfg.clone());
     }
 }
