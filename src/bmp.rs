@@ -6,7 +6,7 @@ use bgpkit_parser::parser::bmp::messages::{BmpMessage, BmpMessageBody};
 use bytes::Bytes;
 use chrono::Utc;
 use core::net::IpAddr;
-use log::{debug, error, trace};
+use log::{debug, error, trace, warn};
 use std::io::{Error, ErrorKind, Result};
 use std::sync::mpsc::Sender;
 use tokio::io::AsyncReadExt;
@@ -27,7 +27,7 @@ pub async fn unmarshal_bmp_packet(socket: &mut TcpStream) -> Result<BmpMessage> 
 
     if packet_length > 4096 {
         return Err(Error::new(
-            ErrorKind::InvalidData,
+            ErrorKind::InvalidInput,
             format!("BMP message length is too big: {} bytes", packet_length),
         ));
     }
@@ -150,10 +150,9 @@ pub async fn handle(socket: &mut TcpStream, state: AsyncState, tx: Sender<Vec<u8
                 continue;
             }
             Err(e) if e.kind() == ErrorKind::InvalidData => {
-                error!("bmp - failed to unmarshal BMP message: {}", e);
-                // TODO: potentially we could do better than just closing the connection
-                error!("bmp - closing connection to {}:{}", router_ip, router_port);
-                break;
+                // Invalid message, continue without processing
+                warn!("bmp - invalid BMP message: {}", e);
+                continue;
             }
             Err(e) => {
                 // Other errors are unexpected
