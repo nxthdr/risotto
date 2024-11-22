@@ -1,10 +1,9 @@
-use crate::state::State;
+use crate::state::AsyncState;
 use axum::{extract::State as AxumState, routing::get, Json, Router};
 use core::net::IpAddr;
 use metrics::{Key, Label, Recorder};
 use metrics_exporter_prometheus::PrometheusBuilder;
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
 
 static METADATA: metrics::Metadata =
     metrics::Metadata::new(module_path!(), metrics::Level::INFO, Some(module_path!()));
@@ -24,10 +23,10 @@ struct APIPeer {
 
 #[derive(Clone)]
 struct AppState {
-    state: Arc<State>,
+    state: AsyncState,
 }
 
-pub fn app(state: Arc<State>) -> Router {
+pub fn app(state: AsyncState) -> Router {
     let app_state = AppState {
         state: state.clone(),
     };
@@ -37,10 +36,11 @@ pub fn app(state: Arc<State>) -> Router {
         .route("/metrics", get(metrics).with_state(app_state.clone()))
 }
 
-async fn format(state: Arc<State>) -> Vec<APIRouter> {
+async fn format(state: AsyncState) -> Vec<APIRouter> {
     let mut api_routers: Vec<APIRouter> = Vec::new();
+    let state = state.lock().unwrap();
 
-    for (router_addr, peer_addr, update_prefix) in state.get_all().await.unwrap() {
+    for (router_addr, peer_addr, update_prefix) in state.get_all().unwrap() {
         // Find the router in the list of routers
         let mut router = None;
         for r in &mut api_routers {

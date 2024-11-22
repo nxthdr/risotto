@@ -13,5 +13,5 @@ kafka:
   batch_max_size: 10
 
 state:
-  address: 10.0.0.101
-  port: 6379
+  path: /app/dump.txt
+  interval: 1

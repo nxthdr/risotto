@@ -2,6 +2,7 @@ use config::Config;
 use core::net::IpAddr;
 use std::error::Error;
 
+#[derive(Clone)]
 pub struct KafkaConfig {
     pub host: String,
     pub topic: String,
@@ -29,16 +30,16 @@ pub fn get_kafka_config(settings: &Config) -> Result<KafkaConfig, Box<dyn Error>
     })
 }
 
+#[derive(Clone)]
 pub struct StateConfig {
-    pub host: String,
+    pub path: String,
+    pub interval: u64,
 }
 
 pub fn get_state_config(settings: &Config) -> Result<StateConfig, Box<dyn Error>> {
-    let redis_addr = settings.get_string("state.address")?;
-    let redis_port = settings.get_int("state.port")?;
-    let host = host(redis_addr, redis_port, true);
-
-    Ok(StateConfig { host })
+    let path = settings.get_string("state.path")?;
+    let interval = settings.get_int("state.interval")? as u64;
+    Ok(StateConfig { path, interval })
 }
 
 pub fn host(address: String, port: i64, accept_fqdn: bool) -> String {

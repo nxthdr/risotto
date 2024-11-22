@@ -16,9 +16,10 @@ Duplicate announcements could, in theory, be handled by the database, but less d
 
 For Peer Down notifications, Risotto leverages its state to generate synthetic withdraws for the prefixes announced by the downed peer.  
 
-To persist the state, Risotto uses Redis. The collector will fetch the current state at startup and infer any missing withdraws from the initial update flow. This ensures the database remains accurate, with the only irrecoverable events during downtime being updates announced and then withdrawn before Risotto restarts.
+For persistance, Risotto dumps its state at specified interval, and fetch it at startup. Risotto is able to infer any missing withdraws from the initial update flow that would have occured during downtime. This ensures the database remains accurate, even if the collector is restarted. On the other hand, a restart may result in duplicate announcements.  
+In other words, Risotto guaranties that the database is always in a consistent state, but may contain some duplicate announcements.
 
-Conversely, Risotto can be configured to stream updates as is to the event pipeline without any state management.
+Conversely, Risotto can be configured to stream updates as is to the event pipeline without any state management. It is useful if there are other components downstream that can handle the state management.
 
 ## Quick Start
 

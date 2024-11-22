@@ -19,7 +19,7 @@ use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio_graceful::Shutdown;
 
-use crate::state::State;
+use crate::state::AsyncState;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -55,7 +55,7 @@ fn load_settings(config_path: &str) -> Arc<Config> {
     Arc::new(cfg)
 }
 
-async fn api_handler(state: Arc<State>, cfg: Arc<Config>) {
+async fn api_handler(state: AsyncState, cfg: Arc<Config>) {
     let address = cfg.get_string("api.address").unwrap();
     let port = cfg.get_int("api.port").unwrap();
     let host = settings::host(address, port, false);
@@ -68,7 +68,7 @@ async fn api_handler(state: Arc<State>, cfg: Arc<Config>) {
     axum::serve(api_listener, app).await.unwrap();
 }
 
-async fn bmp_handler(state: Arc<State>, cfg: Arc<Config>, tx: Sender<Vec<u8>>) {
+async fn bmp_handler(state: AsyncState, cfg: Arc<Config>, tx: Sender<Vec<u8>>) {
     // TODO: Move this to settings.rs
     let address = cfg.get_string("bmp.address").unwrap();
     let port = cfg.get_int("bmp.port").unwrap();
@@ -95,16 +95,27 @@ async fn producer_handler(cfg: Arc<Config>, rx: Receiver<Vec<u8>>) {
     producer::handle(&cfg, rx).await;
 }
 
+async fn state_handler(state: AsyncState, cfg: Arc<Config>) {
+    let cfg = settings::get_state_config(&cfg).unwrap();
+    loop {
+        tokio::time::sleep(Duration::from_secs(cfg.interval)).await;
+        state::dump(state.clone(), cfg.clone());
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let cli = CLI::parse();
 
     let cfg = load_settings(&cli.config);
     let state_config = settings::get_state_config(&cfg).unwrap();
-    let state = state::new_state(&state_config).await?;
+    let state = state::new_state(&state_config);
     let shutdown: Shutdown = Shutdown::default();
 
     set_logging(&cli);
+
+    // Load the state
+    state::load(state.clone(), state_config.clone());
 
     // MPSC channel to communicate between BMP tasks and producer task
     let (tx, rx) = channel();
@@ -112,6 +123,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let api_task = shutdown.spawn_task(api_handler(state.clone(), cfg.clone()));
     let bmp_task = shutdown.spawn_task(bmp_handler(state.clone(), cfg.clone(), tx));
     let producer_task = shutdown.spawn_task(producer_handler(cfg.clone(), rx));
+    let state_task = shutdown.spawn_task(state_handler(state.clone(), cfg.clone()));
 
     tokio::select! {
         _ = shutdown.shutdown_with_limit(Duration::from_secs(1)) => {
@@ -125,6 +137,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
         _ = producer_task => {
             info!("producer - handler shutdown");
+        }
+        _ = state_task => {
+            info!("state - handler shutdown");
         }
     }
 
