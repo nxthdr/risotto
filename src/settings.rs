@@ -34,18 +34,12 @@ pub fn get_kafka_config(settings: &Config) -> Result<KafkaConfig, Box<dyn Error>
 pub struct StateConfig {
     pub path: String,
     pub interval: u64,
-    pub sw_time: u64,
 }
 
 pub fn get_state_config(settings: &Config) -> Result<StateConfig, Box<dyn Error>> {
     let path = settings.get_string("state.path")?;
     let interval = settings.get_int("state.save_interval")? as u64;
-    let sw_time = settings.get_int("state.startup_withdraws_time")? as u64;
-    Ok(StateConfig {
-        path,
-        interval,
-        sw_time,
-    })
+    Ok(StateConfig { path, interval })
 }
 
 pub fn host(address: String, port: i64, accept_fqdn: bool) -> String {

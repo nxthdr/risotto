@@ -55,13 +55,18 @@ impl State {
         Ok(self.store.get_all())
     }
 
+    // Get the updates for a specific router
+    pub fn get_peers(&self, router_addr: &IpAddr) -> Result<Vec<Peer>, Box<dyn Error>> {
+        Ok(self.store.get_peers(router_addr))
+    }
+
     // Get the updates for a specific router and peer
-    pub fn get_updates(
+    pub fn get_updates_by_peer(
         &self,
         router_addr: &IpAddr,
         peer: &BGPkitPeer,
     ) -> Result<Vec<NetworkPrefix>, Box<dyn Error>> {
-        Ok(self.store.get_updates(router_addr, peer))
+        Ok(self.store.get_updates_by_peer(router_addr, peer))
     }
 
     // Remove all updates for a specific router and peer
@@ -122,7 +127,12 @@ impl MemoryStore {
         res
     }
 
-    fn get_updates(&self, router_addr: &IpAddr, peer: &BGPkitPeer) -> Vec<NetworkPrefix> {
+    fn get_peers(&self, router_addr: &IpAddr) -> Vec<Peer> {
+        let router = self.routers.get(router_addr).unwrap();
+        router.peers.values().cloned().collect()
+    }
+
+    fn get_updates_by_peer(&self, router_addr: &IpAddr, peer: &BGPkitPeer) -> Vec<NetworkPrefix> {
         let router = self.routers.get(router_addr).unwrap();
         let updates = router.peers.get(&peer.peer_address).unwrap();
         updates
@@ -162,7 +172,7 @@ impl Hash for TimedPrefix {
 }
 
 #[derive(Serialize, Deserialize, Clone)]
-struct Peer {
+pub struct Peer {
     details: BGPkitPeer,
     updates: HashSet<TimedPrefix>,
 }
@@ -220,56 +230,58 @@ impl Router {
     }
 }
 
-pub async fn startup_withdraws_handler(state: AsyncState, cfg: StateConfig, tx: Sender<Vec<u8>>) {
+pub async fn peer_up_withdraws_handler(
+    state: AsyncState,
+    router_addr: IpAddr,
+    tx: Sender<Vec<u8>>,
+) {
     let startup = chrono::Utc::now();
 
-    tokio::time::sleep(Duration::from_secs(cfg.sw_time)).await;
+    tokio::time::sleep(Duration::from_secs(300)).await; // TODO: randomize
 
     log::info!(
         "state - startup withdraws handler - removing updates older than {}",
         startup
     );
 
-    // This is pretty slow and blocs everything else during the execution
-    // Could potentially be optimized
+    let state_lock: std::sync::MutexGuard<'_, State> = state.lock().unwrap();
+    let peers = state_lock.get_peers(&router_addr).unwrap();
+    drop(state_lock);
+
     let now = Utc::now();
     let mut synthetic_updates = Vec::new();
-    let mut state_lock: std::sync::MutexGuard<'_, State> = state.lock().unwrap();
-    for (router_addr, router) in &mut state_lock.store.routers {
-        for (_, peer) in &mut router.peers {
-            for update in peer.updates.clone() {
-                if update.timestamp < startup.timestamp_millis() {
-                    // This update has been re-announced after startup
-                    // Emit a synthetic withdraw update
-                    synthetic_updates.push((
-                        router_addr.clone(),
-                        peer.clone(),
-                        Update {
-                            prefix: update.prefix.clone(),
-                            announced: false,
-                            origin: Origin::INCOMPLETE,
-                            path: None,
-                            communities: vec![],
-                            timestamp: now.clone(),
-                            synthetic: true,
-                        },
-                    ));
-                }
+    for peer in peers {
+        for update in peer.updates {
+            if update.timestamp < startup.timestamp_millis() {
+                // This update has been re-announced after startup
+                // Emit a synthetic withdraw update
+                synthetic_updates.push((
+                    router_addr.clone(),
+                    peer.details.clone(),
+                    Update {
+                        prefix: update.prefix.clone(),
+                        announced: false,
+                        origin: Origin::INCOMPLETE,
+                        path: None,
+                        communities: vec![],
+                        timestamp: now.clone(),
+                        synthetic: true,
+                    },
+                ));
             }
         }
     }
 
+    let mut state_lock: std::sync::MutexGuard<'_, State> = state.lock().unwrap();
     let mut buffer: Vec<u8> = vec![];
     for (router_addr, peer, update) in &synthetic_updates {
-        let update_str = format_update(*router_addr, 0, &peer.details, &update);
+        let update_str = format_update(*router_addr, 0, &peer, &update);
         log::trace!("{:?}", update_str);
         buffer.extend(update_str.as_bytes());
         buffer.extend(b"\n");
 
         // Remove the update from the state
-        state_lock
-            .store
-            .update(&router_addr, &peer.details, &update);
+        state_lock.store.update(&router_addr, &peer, &update);
     }
 
     log::info!(

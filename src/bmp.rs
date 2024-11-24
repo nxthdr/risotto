@@ -1,4 +1,4 @@
-use crate::state::AsyncState;
+use crate::state::{self, AsyncState};
 use crate::update::{decode_updates, format_update, Update};
 use bgpkit_parser::models::{Origin, Peer};
 use bgpkit_parser::parse_bmp_msg;
@@ -56,7 +56,7 @@ async fn process(
     router_port: u16,
     message: BmpMessage,
 ) {
-    let mut state = state.lock().unwrap();
+    let mut state_lock = state.lock().unwrap();
 
     // Get peer information
     let Some(pph) = message.per_peer_header else {
@@ -68,6 +68,11 @@ async fn process(
     match message.message_body {
         BmpMessageBody::PeerUpNotification(body) => {
             log::trace!("{:?}", body);
+            let spawn_state = state.clone();
+            tokio::spawn(async move {
+                state::peer_up_withdraws_handler(spawn_state.clone(), router_addr, tx.clone())
+                    .await;
+            });
         }
         BmpMessageBody::RouteMonitoring(body) => {
             log::trace!("{:?}", body);
@@ -75,7 +80,7 @@ async fn process(
 
             let mut legitimate_updates = Vec::new();
             for update in potential_updates {
-                let is_updated = state.update(&router_addr, &peer, &update).unwrap();
+                let is_updated = state_lock.update(&router_addr, &peer, &update).unwrap();
                 if is_updated {
                     legitimate_updates.push(update);
                 }
@@ -97,7 +102,7 @@ async fn process(
             // Remove the peer and the associated prefixes
             // To do so, we start by emiting synthetic withdraw updates
             let mut synthetic_updates = Vec::new();
-            let updates = state.get_updates(&router_addr, &peer).unwrap();
+            let updates = state_lock.get_updates_by_peer(&router_addr, &peer).unwrap();
             for prefix in updates {
                 let update_to_withdrawn = Update {
                     prefix,
@@ -113,7 +118,7 @@ async fn process(
             }
 
             // And we then update the state
-            state.remove_updates(&router_addr, &peer).unwrap();
+            state_lock.remove_updates(&router_addr, &peer).unwrap();
 
             let mut buffer = vec![];
             for update in synthetic_updates {
