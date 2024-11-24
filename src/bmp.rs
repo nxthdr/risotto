@@ -84,7 +84,7 @@ async fn process(
             let mut buffer = vec![];
             for update in legitimate_updates {
                 let update = format_update(router_addr, router_port, &peer, &update);
-                log::debug!("{:?}", update);
+                log::trace!("{:?}", update);
                 buffer.extend(update.as_bytes());
                 buffer.extend(b"\n");
             }
@@ -118,7 +118,7 @@ async fn process(
             let mut buffer = vec![];
             for update in synthetic_updates {
                 let update = format_update(router_addr, router_port, &peer, &update);
-                log::debug!("{:?}", update);
+                log::trace!("{:?}", update);
                 buffer.extend(update.as_bytes());
                 buffer.extend(b"\n");
             }

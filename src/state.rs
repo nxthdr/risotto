@@ -211,7 +211,7 @@ impl Router {
 
         if update.announced {
             // Announced prefix: add the update or overwrite it if present
-            peer.updates.insert(timed_prefix);
+            peer.updates.replace(timed_prefix);
         } else {
             // Withdrawn prefix: remove the update if present
             peer.updates.remove(&timed_prefix);
@@ -229,6 +229,10 @@ pub async fn startup_withdraws_handler(state: AsyncState, cfg: StateConfig, tx: 
         "state - startup withdraws handler - removing updates older than {}",
         startup
     );
+
+    // This is pretty slow and blocs everything else during the execution
+    // Could potentially be optimized
+    let now = Utc::now();
     let mut synthetic_updates = Vec::new();
     let mut state_lock: std::sync::MutexGuard<'_, State> = state.lock().unwrap();
     for (router_addr, router) in &mut state_lock.store.routers {
@@ -246,7 +250,7 @@ pub async fn startup_withdraws_handler(state: AsyncState, cfg: StateConfig, tx: 
                             origin: Origin::INCOMPLETE,
                             path: None,
                             communities: vec![],
-                            timestamp: Utc::now(),
+                            timestamp: now.clone(),
                             synthetic: true,
                         },
                     ));
@@ -258,7 +262,7 @@ pub async fn startup_withdraws_handler(state: AsyncState, cfg: StateConfig, tx: 
     let mut buffer: Vec<u8> = vec![];
     for (router_addr, peer, update) in &synthetic_updates {
         let update_str = format_update(*router_addr, 0, &peer.details, &update);
-        log::debug!("{:?}", update_str);
+        log::trace!("{:?}", update_str);
         buffer.extend(update_str.as_bytes());
         buffer.extend(b"\n");
 
@@ -268,7 +272,6 @@ pub async fn startup_withdraws_handler(state: AsyncState, cfg: StateConfig, tx: 
             .update(&router_addr, &peer.details, &update);
     }
 
-    drop(state_lock);
     log::info!(
         "state - startup withdraws handler - emitting {} synthetic withdraw updates",
         synthetic_updates.len()
