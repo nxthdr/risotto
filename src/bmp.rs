@@ -70,8 +70,7 @@ async fn process(
             log::trace!("{:?}", body);
             let spawn_state = state.clone();
             tokio::spawn(async move {
-                state::peer_up_withdraws_handler(spawn_state.clone(), router_addr, tx.clone())
-                    .await;
+                state::peer_up_withdraws_handler(spawn_state, router_addr, tx).await;
             });
         }
         BmpMessageBody::RouteMonitoring(body) => {

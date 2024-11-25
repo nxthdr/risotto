@@ -2027,6 +2027,7 @@ dependencies = [
  "metrics",
  "metrics-exporter-prometheus",
  "prefix-trie",
+ "rand",
  "serde",
  "serde_json",
  "tokio",
