@@ -56,33 +56,27 @@ fn load_settings(config_path: &str) -> Arc<Config> {
 }
 
 async fn api_handler(state: AsyncState, cfg: Arc<Config>) {
-    let address = cfg.get_string("api.address").unwrap();
-    let port = cfg.get_int("api.port").unwrap();
-    let host = settings::host(address, port, false);
+    let api_config = settings::get_api_config(&cfg).unwrap();
 
-    debug!("api - binding listener to {}", host);
+    debug!("api - binding listener to {}", api_config.host);
+    let api_listener = TcpListener::bind(api_config.host).await.unwrap();
 
-    let api_listener = TcpListener::bind(host).await.unwrap();
     let app = api::app(state.clone());
-
     axum::serve(api_listener, app).await.unwrap();
 }
 
 async fn bmp_handler(state: AsyncState, cfg: Arc<Config>, tx: Sender<Vec<u8>>) {
-    // TODO: Move this to settings.rs
-    let address = cfg.get_string("bmp.address").unwrap();
-    let port = cfg.get_int("bmp.port").unwrap();
-    let host = settings::host(address, port, false);
+    let bmp_config = settings::get_bmp_config(&cfg).unwrap();
 
-    debug!("bmp - binding listener to {}", host);
+    debug!("bmp - binding listener to {}", bmp_config.host);
+    let bmp_listener = TcpListener::bind(bmp_config.host).await.unwrap();
 
-    let bmp_listener = TcpListener::bind(host).await.unwrap();
     loop {
         let (mut bmp_socket, _) = bmp_listener.accept().await.unwrap();
         let bmp_state = state.clone();
         let tx = tx.clone();
 
-        // We spawn a new task for each BMP connection
+        // Spawn a new task for each BMP connection
         tokio::spawn(async move {
             bmp::handle(&mut bmp_socket, bmp_state.clone(), tx).await;
         });

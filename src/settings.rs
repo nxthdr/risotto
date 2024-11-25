@@ -3,6 +3,30 @@ use core::net::IpAddr;
 use std::error::Error;
 
 #[derive(Clone)]
+pub struct APIConfig {
+    pub host: String,
+}
+
+pub fn get_api_config(settings: &Config) -> Result<APIConfig, Box<dyn Error>> {
+    let api_addr = settings.get_string("api.address")?;
+    let api_port = settings.get_int("api.port")?;
+    let host = host(api_addr, api_port, false);
+    Ok(APIConfig { host })
+}
+
+#[derive(Clone)]
+pub struct BMPConfig {
+    pub host: String,
+}
+
+pub fn get_bmp_config(settings: &Config) -> Result<BMPConfig, Box<dyn Error>> {
+    let bmp_addr = settings.get_string("bmp.address")?;
+    let bmp_port = settings.get_int("bmp.port")?;
+    let host = host(bmp_addr, bmp_port, true);
+    Ok(BMPConfig { host })
+}
+
+#[derive(Clone)]
 pub struct KafkaConfig {
     pub host: String,
     pub topic: String,
