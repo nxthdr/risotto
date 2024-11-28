@@ -13,5 +13,6 @@ kafka:
   batch_max_size: 10
 
 state:
+  enable: false
   path: /app/dump.txt
   save_interval: 10

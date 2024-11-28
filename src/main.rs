@@ -106,8 +106,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     set_logging(&cli);
 
-    // Load the state
-    state::load(state.clone(), state_config.clone());
+    // Load the state if enabled
+    if state_config.enable {
+        state::load(state.clone(), state_config.clone());
+    }
 
     // MPSC channel to communicate between BMP tasks and producer task
     let (tx, rx) = channel();

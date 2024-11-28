@@ -42,12 +42,14 @@ pub fn load(state: AsyncState, cfg: StateConfig) {
 
 pub struct State {
     store: MemoryStore,
+    config: StateConfig,
 }
 
 impl State {
-    pub fn new(_sc: &StateConfig) -> State {
+    pub fn new(state_config: &StateConfig) -> State {
         State {
             store: MemoryStore::new(),
+            config: state_config.clone(),
         }
     }
 
@@ -76,6 +78,10 @@ impl State {
         router_addr: &IpAddr,
         peer: &BGPkitPeer,
     ) -> Result<(), Box<dyn Error>> {
+        if !self.config.enable {
+            return Ok(());
+        }
+
         self.store.remove_peer(router_addr, peer);
         Ok(())
     }
@@ -87,6 +93,10 @@ impl State {
         peer: &BGPkitPeer,
         update: &Update,
     ) -> Result<bool, Box<dyn Error>> {
+        if !self.config.enable {
+            // If the state is disabled, all updates are emited
+            return Ok(true);
+        }
         let emit = self.store.update(router_addr, peer, update);
         Ok(emit)
     }
@@ -129,13 +139,23 @@ impl MemoryStore {
     }
 
     fn get_peers(&self, router_addr: &IpAddr) -> Vec<Peer> {
-        let router = self.routers.get(router_addr).unwrap();
+        let router_binding = Router::new();
+        let router = self.routers.get(router_addr).unwrap_or(&router_binding);
         router.peers.values().cloned().collect()
     }
 
     fn get_updates_by_peer(&self, router_addr: &IpAddr, peer: &BGPkitPeer) -> Vec<NetworkPrefix> {
-        let router = self.routers.get(router_addr).unwrap();
-        let updates = router.peers.get(&peer.peer_address).unwrap();
+        let router_binding = Router::new();
+        let router = self.routers.get(router_addr).unwrap_or(&router_binding);
+        let peer_binding = Peer {
+            details: peer.clone(),
+            updates: HashSet::new(),
+        };
+        let updates = router
+            .peers
+            .get(&peer.peer_address)
+            .unwrap_or(&peer_binding);
+
         updates
             .updates
             .iter()
@@ -251,7 +271,10 @@ pub async fn peer_up_withdraws_handler(
     );
 
     let state_lock: std::sync::MutexGuard<'_, State> = state.lock().unwrap();
-    let peers = state_lock.get_peers(&router_addr).unwrap();
+    let peers = match state_lock.get_peers(&router_addr) {
+        Ok(peers) => peers,
+        Err(_) => return,
+    };
     drop(state_lock);
 
     let now = Utc::now();
@@ -301,8 +324,11 @@ pub async fn peer_up_withdraws_handler(
 
 pub async fn dump_handler(state: AsyncState, cfg: StateConfig) {
     loop {
+        // TODO do not spawn this task if state is disabled
         tokio::time::sleep(Duration::from_secs(cfg.interval)).await;
-        log::debug!("state - dump handler - dumping state to {}", cfg.path);
-        dump(state.clone(), cfg.clone());
+        if cfg.enable {
+            log::debug!("state - dump handler - dumping state to {}", cfg.path);
+            dump(state.clone(), cfg.clone());
+        }
     }
 }

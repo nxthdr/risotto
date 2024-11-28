@@ -56,14 +56,20 @@ pub fn get_kafka_config(settings: &Config) -> Result<KafkaConfig, Box<dyn Error>
 
 #[derive(Clone)]
 pub struct StateConfig {
+    pub enable: bool,
     pub path: String,
     pub interval: u64,
 }
 
 pub fn get_state_config(settings: &Config) -> Result<StateConfig, Box<dyn Error>> {
+    let enable = settings.get_bool("state.enable")?;
     let path = settings.get_string("state.path")?;
     let interval = settings.get_int("state.save_interval")? as u64;
-    Ok(StateConfig { path, interval })
+    Ok(StateConfig {
+        enable,
+        path,
+        interval,
+    })
 }
 
 pub fn host(address: String, port: i64, accept_fqdn: bool) -> String {

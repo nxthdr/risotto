@@ -42,6 +42,7 @@ kafka:
   topic: bgp-updates
 
 state:
+  enable: true
   path: /app/dump.txt
   save_interval: 10
 ```
