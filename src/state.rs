@@ -258,7 +258,9 @@ pub async fn peer_up_withdraws_handler(
     tokio::time::sleep(Duration::from_secs(sleep_time as u64)).await;
 
     log::info!(
-        "state - startup withdraws handler - removing updates older than {}",
+        "state - startup withdraws handler - {} - {} removing updates older than {}",
+        router_addr,
+        bgp_peer.peer_address,
         startup
     );
 
@@ -309,7 +311,9 @@ pub async fn peer_up_withdraws_handler(
     }
 
     log::info!(
-        "state - startup withdraws handler - emitting {} synthetic withdraw updates",
+        "state - startup withdraws handler - {} - {} emitting {} synthetic withdraw updates",
+        router_addr,
+        bgp_peer.peer_address,
         synthetic_updates.len()
     );
 
