@@ -68,9 +68,14 @@ async fn process(
     match message.message_body {
         BmpMessageBody::PeerUpNotification(body) => {
             log::trace!("{:?}", body);
+            log::info!(
+                "bmp - PeerUpNotification: {} - {}",
+                router_addr,
+                peer.peer_address
+            );
             let spawn_state = state.clone();
             tokio::spawn(async move {
-                state::peer_up_withdraws_handler(spawn_state, router_addr, tx).await;
+                state::peer_up_withdraws_handler(spawn_state, router_addr, peer, tx).await;
             });
         }
         BmpMessageBody::RouteMonitoring(body) => {
@@ -98,13 +103,18 @@ async fn process(
         }
         BmpMessageBody::PeerDownNotification(body) => {
             log::trace!("{:?}", body);
+            log::info!(
+                "bmp - PeerDownNotification: {} - {}",
+                router_addr,
+                peer.peer_address
+            );
             // Remove the peer and the associated prefixes
             // To do so, we start by emiting synthetic withdraw updates
             let mut synthetic_updates = Vec::new();
             let updates = state_lock.get_updates_by_peer(&router_addr, &peer).unwrap();
             for prefix in updates {
                 let update_to_withdrawn = Update {
-                    prefix,
+                    prefix: prefix.prefix.clone(),
                     announced: false,
                     origin: Origin::INCOMPLETE,
                     path: None,

@@ -54,13 +54,8 @@ impl State {
     }
 
     // Get all the updates from the state
-    pub fn get_all(&self) -> Result<Vec<(IpAddr, IpAddr, NetworkPrefix)>, Box<dyn Error>> {
+    pub fn get_all(&self) -> Result<Vec<(IpAddr, IpAddr, TimedPrefix)>, Box<dyn Error>> {
         Ok(self.store.get_all())
-    }
-
-    // Get the updates for a specific router
-    pub fn get_peers(&self, router_addr: &IpAddr) -> Result<Vec<Peer>, Box<dyn Error>> {
-        Ok(self.store.get_peers(router_addr))
     }
 
     // Get the updates for a specific router and peer
@@ -68,7 +63,7 @@ impl State {
         &self,
         router_addr: &IpAddr,
         peer: &BGPkitPeer,
-    ) -> Result<Vec<NetworkPrefix>, Box<dyn Error>> {
+    ) -> Result<Vec<TimedPrefix>, Box<dyn Error>> {
         Ok(self.store.get_updates_by_peer(router_addr, peer))
     }
 
@@ -102,6 +97,24 @@ impl State {
     }
 }
 
+#[derive(Serialize, Deserialize, Eq, Clone)]
+pub struct TimedPrefix {
+    pub prefix: NetworkPrefix,
+    pub timestamp: i64,
+}
+
+impl PartialEq for TimedPrefix {
+    fn eq(&self, other: &Self) -> bool {
+        self.prefix == other.prefix
+    }
+}
+
+impl Hash for TimedPrefix {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.prefix.hash(state);
+    }
+}
+
 #[derive(Serialize, Deserialize)]
 struct MemoryStore {
     routers: HashMap<IpAddr, Router>,
@@ -122,29 +135,25 @@ impl MemoryStore {
         router
     }
 
-    fn get_all(&self) -> Vec<(IpAddr, IpAddr, NetworkPrefix)> {
+    fn get_all(&self) -> Vec<(IpAddr, IpAddr, TimedPrefix)> {
         let mut res = Vec::new();
         for (router_addr, router) in &self.routers {
             for (peer_addr, peer) in &router.peers {
                 for update in &peer.updates {
-                    res.push((
-                        router_addr.clone(),
-                        peer_addr.clone(),
-                        update.prefix.clone(),
-                    ));
+                    res.push((router_addr.clone(), peer_addr.clone(), update.clone()));
                 }
             }
         }
         res
     }
 
-    fn get_peers(&self, router_addr: &IpAddr) -> Vec<Peer> {
+    fn get_peer(&self, router_addr: &IpAddr, peer_addr: &IpAddr) -> Option<Peer> {
         let router_binding = Router::new();
         let router = self.routers.get(router_addr).unwrap_or(&router_binding);
-        router.peers.values().cloned().collect()
+        router.peers.get(peer_addr).cloned()
     }
 
-    fn get_updates_by_peer(&self, router_addr: &IpAddr, peer: &BGPkitPeer) -> Vec<NetworkPrefix> {
+    fn get_updates_by_peer(&self, router_addr: &IpAddr, peer: &BGPkitPeer) -> Vec<TimedPrefix> {
         let router_binding = Router::new();
         let router = self.routers.get(router_addr).unwrap_or(&router_binding);
         let peer_binding = Peer {
@@ -159,7 +168,7 @@ impl MemoryStore {
         updates
             .updates
             .iter()
-            .map(|timed_prefix| timed_prefix.prefix.clone())
+            .map(|timed_prefix| timed_prefix.clone())
             .collect()
     }
 
@@ -171,24 +180,6 @@ impl MemoryStore {
     fn update(&mut self, router_addr: &IpAddr, peer: &BGPkitPeer, update: &Update) -> bool {
         let router = self._get_router(router_addr);
         router.update(peer, update)
-    }
-}
-
-#[derive(Serialize, Deserialize, Eq, Clone)]
-struct TimedPrefix {
-    prefix: NetworkPrefix,
-    timestamp: i64,
-}
-
-impl PartialEq for TimedPrefix {
-    fn eq(&self, other: &Self) -> bool {
-        self.prefix == other.prefix
-    }
-}
-
-impl Hash for TimedPrefix {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.prefix.hash(state);
     }
 }
 
@@ -254,6 +245,7 @@ impl Router {
 pub async fn peer_up_withdraws_handler(
     state: AsyncState,
     router_addr: IpAddr,
+    bgp_peer: BGPkitPeer,
     tx: Sender<Vec<u8>>,
 ) {
     let startup = chrono::Utc::now();
@@ -271,33 +263,36 @@ pub async fn peer_up_withdraws_handler(
     );
 
     let state_lock: std::sync::MutexGuard<'_, State> = state.lock().unwrap();
-    let peers = match state_lock.get_peers(&router_addr) {
-        Ok(peers) => peers,
-        Err(_) => return,
+    let peer = match state_lock
+        .store
+        .get_peer(&router_addr, &bgp_peer.peer_address)
+    {
+        Some(peer) => peer,
+        None => return,
     };
+
     drop(state_lock);
 
     let now = Utc::now();
     let mut synthetic_updates = Vec::new();
-    for peer in peers {
-        for update in peer.updates {
-            if update.timestamp < startup.timestamp_millis() {
-                // This update has been re-announced after startup
-                // Emit a synthetic withdraw update
-                synthetic_updates.push((
-                    router_addr.clone(),
-                    peer.details.clone(),
-                    Update {
-                        prefix: update.prefix.clone(),
-                        announced: false,
-                        origin: Origin::INCOMPLETE,
-                        path: None,
-                        communities: vec![],
-                        timestamp: now.clone(),
-                        synthetic: true,
-                    },
-                ));
-            }
+
+    for update in peer.updates {
+        if update.timestamp < startup.timestamp_millis() {
+            // This update has been re-announced after startup
+            // Emit a synthetic withdraw update
+            synthetic_updates.push((
+                router_addr.clone(),
+                peer.details.clone(),
+                Update {
+                    prefix: update.prefix.clone(),
+                    announced: false,
+                    origin: Origin::INCOMPLETE,
+                    path: None,
+                    communities: vec![],
+                    timestamp: now.clone(),
+                    synthetic: true,
+                },
+            ));
         }
     }
 
