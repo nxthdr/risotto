@@ -73,6 +73,7 @@ async fn process(
                 router_addr,
                 peer.peer_address
             );
+
             let spawn_state = state.clone();
             tokio::spawn(async move {
                 state::peer_up_withdraws_handler(spawn_state, router_addr, peer, tx).await;
@@ -108,6 +109,7 @@ async fn process(
                 router_addr,
                 peer.peer_address
             );
+
             // Remove the peer and the associated prefixes
             // To do so, we start by emiting synthetic withdraw updates
             let mut synthetic_updates = Vec::new();

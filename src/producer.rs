@@ -107,7 +107,7 @@ pub async fn handle(cfg: &KafkaConfig, rx: Receiver<Vec<u8>>) {
     }
 
     // TODO: Allow compression setting via the config file
-    // TODO: Allow timeouts settins via the config file
+    // TODO: Allow timeouts setting via the config file
     let mut producer = Producer::from_client(client)
         .with_ack_timeout(Duration::from_millis(DEFAULT_ACK_TIMEOUT_MILLIS))
         .with_connection_idle_timeout(Duration::from_millis(

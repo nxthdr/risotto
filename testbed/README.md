@@ -2,7 +2,7 @@
 
 Docker Compose setup to facilitate the tests of Risotto.
 
-The testbed consists in two [Bird](https://bird.network.cz/) routers exchanging static routes via a eBGP session.  
+The testbed consists in two [Bird](https://bird.network.cz/) routers exchanging static routes via a eBGP session.
 Check out the [routers](./config/bird/) and [Risotto](./config/risotto/) configuration.
 
 Both routers are configured to send BMP messages to the Risotto instance accessible at the bridge IP address `10.0.0.100`, with the Kafka endpoint disabled in Risotto's configuration.

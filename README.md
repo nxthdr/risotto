@@ -1,4 +1,4 @@
-# Risotto 
+# Risotto
 
 > [!WARNING]
 > Risotto is currently in early-stage development.
@@ -7,16 +7,16 @@ Risotto 😋 is a BGP updates collector that gathers BGP updates from routers vi
 
 ## State Management
 
-Risotto maintains a state representing connected routers and their associated BGP peers and announced prefixes.  
-This state addresses two challenges when handling BMP data:  
-- **Duplicate announcements** from BMP session resets, where the router resends all active prefixes to the collector after a restart or connectivity issue.  
+Risotto maintains a state representing connected routers and their associated BGP peers and announced prefixes.
+This state addresses two challenges when handling BMP data:
+- **Duplicate announcements** from BMP session resets, where the router resends all active prefixes to the collector after a restart or connectivity issue.
 - **Missing withdraws** when Peer Down notifications occur or when the collector is offline, resulting in incorrect BGP state downstream.
 
 Duplicate announcements could, in theory, be handled by the database, but less data manipulation is better. Instead, Risotto checks each incoming update against its state. If the prefix is already present, the update is discarded.
 
-For Peer Down notifications, Risotto leverages its state to generate synthetic withdraws for the prefixes announced by the downed peer.  
+For Peer Down notifications, Risotto leverages its state to generate synthetic withdraws for the prefixes announced by the downed peer.
 
-For persistance, Risotto dumps its state at specified interval, and fetch it at startup. Risotto is able to infer any missing withdraws that would have occured during downtime, from the initial peer up flow. This ensures the database remains accurate, even if the collector is restarted. On the other hand, a restart may result in duplicate announcements.  
+For persistance, Risotto dumps its state at specified interval, and fetches it at startup. Risotto is able to infer any missing withdraws that would have occured during downtime, from the initial peer up flow. This ensures the database remains accurate, even if the collector is restarted. On the other hand, a restart may result in duplicate announcements.
 In other words, Risotto guaranties that the database is always in a consistent state, but may contain some duplicate announcements.
 
 Conversely, Risotto can be configured to stream updates as is to the event pipeline without any state management. It is useful if there are other components downstream that can handle the state management.

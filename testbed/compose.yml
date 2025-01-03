@@ -1,6 +1,6 @@
 services:
   bird_10:
-    image: ghcr.io/nxthdr/bird:main
+    image: ghcr.io/nxthdr/bird:2.16
     user: root
     cap_add:
       - NET_ADMIN
@@ -11,9 +11,9 @@ services:
     networks:
       testbed:
         ipv4_address: 10.0.0.10
-  
+
   bird_20:
-    image: ghcr.io/nxthdr/bird:main
+    image: ghcr.io/nxthdr/bird:2.16
     user: root
     cap_add:
       - NET_ADMIN
@@ -24,7 +24,7 @@ services:
     networks:
       testbed:
         ipv4_address: 10.0.0.20
-      
+
   redpanda:
     image: vectorized/redpanda:latest
     command: redpanda start --check=false --overprovisioned --smp 1 --memory 500M
