@@ -1,5 +1,5 @@
 use crate::state::{self, AsyncState};
-use crate::update::{create_withdraw_update, decode_updates, format_update, UpdateHeader};
+use crate::update::{decode_updates, format_update, synthesize_withdraw_update, UpdateHeader};
 use bgpkit_parser::bmp::messages::PerPeerFlags;
 use bgpkit_parser::models::Peer;
 use bgpkit_parser::parse_bmp_msg;
@@ -121,16 +121,19 @@ async fn process(
                 peer.peer_address
             );
 
-            // Remove the peer and the associated prefixes
-            // To do so, we start by emiting synthetic withdraw updates
+            // Remove the peer and the associated updates from the state
+            // We start by emiting synthetic withdraw updates
             let mut synthetic_updates = Vec::new();
             let updates = state_lock.get_updates_by_peer(&router_addr, &peer).unwrap();
             let now = Utc::now();
             for prefix in updates {
-                synthetic_updates.push(create_withdraw_update(prefix.prefix.clone(), now.clone()));
+                synthetic_updates.push(synthesize_withdraw_update(
+                    prefix.prefix.clone(),
+                    now.clone(),
+                ));
             }
 
-            // And we then update the state
+            // Then update the state
             state_lock.remove_updates(&router_addr, &peer).unwrap();
 
             let mut buffer = vec![];
@@ -141,7 +144,7 @@ async fn process(
                 buffer.extend(b"\n");
             }
 
-            // Sent to the event pipeline
+            // Finally send the synthetic updates to the event pipeline
             tx.send(buffer).unwrap();
         }
         _ => (),

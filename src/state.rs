@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use crate::settings::StateConfig;
-use crate::update::{create_withdraw_update, format_update, Update};
+use crate::update::{format_update, synthesize_withdraw_update, Update};
 
 pub type AsyncState = Arc<Mutex<State>>;
 
@@ -99,18 +99,20 @@ impl State {
 #[derive(Serialize, Deserialize, Eq, Clone)]
 pub struct TimedPrefix {
     pub prefix: NetworkPrefix,
+    pub is_post_policy: bool,
     pub timestamp: i64,
 }
 
 impl PartialEq for TimedPrefix {
     fn eq(&self, other: &Self) -> bool {
-        self.prefix == other.prefix
+        self.prefix == other.prefix && self.is_post_policy == other.is_post_policy
     }
 }
 
 impl Hash for TimedPrefix {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.prefix.hash(state);
+        self.is_post_policy.hash(state);
     }
 }
 
@@ -222,7 +224,8 @@ impl Router {
 
         let now: i64 = chrono::Utc::now().timestamp_millis();
         let timed_prefix = TimedPrefix {
-            prefix: update.prefix.clone(),
+            prefix: update.prefix,
+            is_post_policy: update.is_post_policy,
             timestamp: now,
         };
 
@@ -284,7 +287,7 @@ pub async fn peer_up_withdraws_handler(
             synthetic_updates.push((
                 router_addr.clone(),
                 peer.details.clone(),
-                create_withdraw_update(update.prefix.clone(), now.clone()),
+                synthesize_withdraw_update(update.prefix.clone(), now.clone()),
             ));
         }
     }
