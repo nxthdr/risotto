@@ -1,6 +1,7 @@
 use crate::state::{self, AsyncState};
-use crate::update::{decode_updates, format_update, Update};
-use bgpkit_parser::models::{Origin, Peer};
+use crate::update::{create_withdraw_update, decode_updates, format_update, UpdateHeader};
+use bgpkit_parser::bmp::messages::PerPeerFlags;
+use bgpkit_parser::models::Peer;
 use bgpkit_parser::parse_bmp_msg;
 use bgpkit_parser::parser::bmp::messages::{BmpMessage, BmpMessageBody};
 use bytes::Bytes;
@@ -63,7 +64,12 @@ async fn process(
         return;
     };
     let peer = Peer::new(pph.peer_bgp_id, pph.peer_ip, pph.peer_asn);
-    let ts = (pph.timestamp * 1000.0) as i64;
+    let timestamp = (pph.timestamp * 1000.0) as i64;
+
+    let is_post_policy = match pph.peer_flags {
+        PerPeerFlags::PeerFlags(flags) => flags.is_post_policy(),
+        PerPeerFlags::LocalRibPeerFlags(_) => false,
+    };
 
     match message.message_body {
         BmpMessageBody::PeerUpNotification(body) => {
@@ -81,7 +87,12 @@ async fn process(
         }
         BmpMessageBody::RouteMonitoring(body) => {
             log::trace!("{:?}", body);
-            let potential_updates = decode_updates(body, ts).unwrap_or(Vec::new());
+            let header = UpdateHeader {
+                timestamp,
+                is_post_policy,
+            };
+
+            let potential_updates = decode_updates(body, header).unwrap_or(Vec::new());
 
             let mut legitimate_updates = Vec::new();
             for update in potential_updates {
@@ -114,18 +125,9 @@ async fn process(
             // To do so, we start by emiting synthetic withdraw updates
             let mut synthetic_updates = Vec::new();
             let updates = state_lock.get_updates_by_peer(&router_addr, &peer).unwrap();
+            let now = Utc::now();
             for prefix in updates {
-                let update_to_withdrawn = Update {
-                    prefix: prefix.prefix.clone(),
-                    announced: false,
-                    origin: Origin::INCOMPLETE,
-                    path: None,
-                    communities: vec![],
-                    timestamp: Utc::now(),
-                    synthetic: true,
-                };
-
-                synthetic_updates.push(update_to_withdrawn);
+                synthetic_updates.push(create_withdraw_update(prefix.prefix.clone(), now.clone()));
             }
 
             // And we then update the state

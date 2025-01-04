@@ -1,4 +1,4 @@
-use bgpkit_parser::models::{NetworkPrefix, Origin, Peer as BGPkitPeer};
+use bgpkit_parser::models::{NetworkPrefix, Peer as BGPkitPeer};
 use chrono::Utc;
 use core::net::IpAddr;
 use rand::Rng;
@@ -11,8 +11,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use crate::settings::StateConfig;
-use crate::update::format_update;
-use crate::update::Update;
+use crate::update::{create_withdraw_update, format_update, Update};
 
 pub type AsyncState = Arc<Mutex<State>>;
 
@@ -285,15 +284,7 @@ pub async fn peer_up_withdraws_handler(
             synthetic_updates.push((
                 router_addr.clone(),
                 peer.details.clone(),
-                Update {
-                    prefix: update.prefix.clone(),
-                    announced: false,
-                    origin: Origin::INCOMPLETE,
-                    path: None,
-                    communities: vec![],
-                    timestamp: now.clone(),
-                    synthetic: true,
-                },
+                create_withdraw_update(update.prefix.clone(), now.clone()),
             ));
         }
     }
