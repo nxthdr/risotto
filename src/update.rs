@@ -93,9 +93,9 @@ pub fn decode_updates(message: RouteMonitoring, header: UpdateHeader) -> Option<
     }
 }
 
-pub fn create_withdraw_update(prefix: NetworkPrefix, timestamp: DateTime<Utc>) -> Update {
+pub fn synthesize_withdraw_update(prefix: NetworkPrefix, timestamp: DateTime<Utc>) -> Update {
     Update {
-        prefix: prefix,
+        prefix,
         announced: false,
         origin: Origin::INCOMPLETE,
         path: None,
