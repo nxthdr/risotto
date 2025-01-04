@@ -50,7 +50,7 @@ pub async fn unmarshal_bmp_packet(socket: &mut TcpStream) -> Result<BmpMessage> 
     }
 }
 
-async fn process(
+async fn process_bmp_packet(
     state: AsyncState,
     tx: Sender<Vec<u8>>,
     router_addr: IpAddr,
@@ -194,7 +194,7 @@ pub async fn handle(socket: &mut TcpStream, state: AsyncState, tx: Sender<Vec<u8
         let process_state = state.clone();
         let process_tx = tx.clone();
         tokio::spawn(async move {
-            process(process_state, process_tx, router_ip, router_port, message).await;
+            process_bmp_packet(process_state, process_tx, router_ip, router_port, message).await;
         });
     }
 }

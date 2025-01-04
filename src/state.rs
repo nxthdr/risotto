@@ -15,21 +15,21 @@ use crate::update::{format_update, synthesize_withdraw_update, Update};
 
 pub type AsyncState = Arc<Mutex<State>>;
 
-pub fn new_state(_sc: &StateConfig) -> AsyncState {
-    Arc::new(Mutex::new(State::new(_sc)))
+pub fn new_state(state_config: &StateConfig) -> AsyncState {
+    Arc::new(Mutex::new(State::new(state_config)))
 }
 
-pub fn dump(state: AsyncState, cfg: StateConfig) {
+pub fn dump(state: AsyncState) {
     let state = state.lock().unwrap();
-    let file = std::fs::File::create(cfg.path).unwrap();
+    let file = std::fs::File::create(state.config.path.clone()).unwrap();
     let mut writer = std::io::BufWriter::new(file);
     serde_json::to_writer(&mut writer, &state.store).unwrap();
 }
 
-pub fn load(state: AsyncState, cfg: StateConfig) {
+pub fn load(state: AsyncState) {
     let mut state = state.lock().unwrap();
 
-    let file = match std::fs::File::open(cfg.path) {
+    let file = match std::fs::File::open(state.config.path.clone()) {
         Ok(file) => file,
         Err(_) => return,
     };
@@ -321,7 +321,7 @@ pub async fn dump_handler(state: AsyncState, cfg: StateConfig) {
         tokio::time::sleep(Duration::from_secs(cfg.interval)).await;
         if cfg.enable {
             log::debug!("state - dump handler - dumping state to {}", cfg.path);
-            dump(state.clone(), cfg.clone());
+            dump(state.clone());
         }
     }
 }
