@@ -5,6 +5,11 @@ use bgpkit_parser::models::*;
 use core::net::IpAddr;
 use log::error;
 
+pub struct UpdateHeader {
+    pub timestamp: i64,
+    pub is_post_policy: bool,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Update {
     pub prefix: NetworkPrefix,
@@ -12,11 +17,12 @@ pub struct Update {
     pub origin: Origin,
     pub path: Option<AsPath>,
     pub communities: Vec<MetaCommunity>,
+    pub is_post_policy: bool,
     pub timestamp: DateTime<Utc>,
     pub synthetic: bool,
 }
 
-pub fn decode_updates(message: RouteMonitoring, timestamp: i64) -> Option<Vec<Update>> {
+pub fn decode_updates(message: RouteMonitoring, header: UpdateHeader) -> Option<Vec<Update>> {
     let mut updates = Vec::new();
 
     match message.bgp_message {
@@ -57,12 +63,12 @@ pub fn decode_updates(message: RouteMonitoring, timestamp: i64) -> Option<Vec<Up
             };
             let communities: Vec<MetaCommunity> = attributes.iter_communities().collect();
 
-            let timestamp = match Utc.timestamp_millis_opt(timestamp) {
+            let timestamp = match Utc.timestamp_millis_opt(header.timestamp) {
                 MappedLocalTime::Single(dt) => dt,
                 _ => {
                     error!(
                         "bmp - failed to parse timestamp: {}, using Utc::now()",
-                        timestamp
+                        header.timestamp
                     );
                     Utc::now()
                 }
@@ -75,6 +81,7 @@ pub fn decode_updates(message: RouteMonitoring, timestamp: i64) -> Option<Vec<Up
                     origin,
                     path: path.clone(),
                     communities: communities.clone(),
+                    is_post_policy: header.is_post_policy,
                     timestamp,
                     synthetic: false,
                 });
@@ -83,6 +90,19 @@ pub fn decode_updates(message: RouteMonitoring, timestamp: i64) -> Option<Vec<Up
             return Some(updates);
         }
         _ => None,
+    }
+}
+
+pub fn create_withdraw_update(prefix: NetworkPrefix, timestamp: DateTime<Utc>) -> Update {
+    Update {
+        prefix: prefix,
+        announced: false,
+        origin: Origin::INCOMPLETE,
+        path: None,
+        communities: vec![],
+        is_post_policy: false,
+        timestamp,
+        synthetic: true,
     }
 }
 
@@ -132,7 +152,7 @@ fn map_to_ipv6(ip: IpAddr) -> IpAddr {
 }
 
 // Returns a CSV line corresponding to this schema
-// timestamp,router_addr,router_port,peer_addr,peer_bgp_id,peer_asn,prefix_addr,prefix_len,origin,announced,synthetic,path,communities
+// timestamp,router_addr,router_port,peer_addr,peer_bgp_id,peer_asn,prefix_addr,prefix_len,announced,is_post_policy,origin,path,communities,synthetic
 pub fn format_update(
     router_addr: IpAddr,
     router_port: u16,
@@ -162,11 +182,12 @@ pub fn format_update(
     row.push(format!("{}", peer.peer_asn));
     row.push(format!("{}", map_to_ipv6(update.prefix.prefix.addr())));
     row.push(format!("{}", update.prefix.prefix.prefix_len()));
-    row.push(format!("{}", update.origin));
+    row.push(format!("{}", update.is_post_policy));
     row.push(format!("{}", update.announced));
-    row.push(format!("{}", update.synthetic));
+    row.push(format!("{}", update.origin));
     row.push(format!("{}", as_path_str));
     row.push(format!("{}", communities_str));
+    row.push(format!("{}", update.synthetic));
 
     return row.join(",");
 }
