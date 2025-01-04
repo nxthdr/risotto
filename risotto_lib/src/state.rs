@@ -10,26 +10,25 @@ use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use crate::settings::StateConfig;
 use crate::update::{format_update, synthesize_withdraw_update, Update};
 
 pub type AsyncState = Arc<Mutex<State>>;
 
-pub fn new_state(_sc: &StateConfig) -> AsyncState {
-    Arc::new(Mutex::new(State::new(_sc)))
+pub fn new_state(path: String, enable: bool) -> AsyncState {
+    Arc::new(Mutex::new(State::new(path.clone(), enable)))
 }
 
-pub fn dump(state: AsyncState, cfg: StateConfig) {
+pub fn dump(state: AsyncState) {
     let state = state.lock().unwrap();
-    let file = std::fs::File::create(cfg.path).unwrap();
+    let file = std::fs::File::create(state.path.clone()).unwrap();
     let mut writer = std::io::BufWriter::new(file);
     serde_json::to_writer(&mut writer, &state.store).unwrap();
 }
 
-pub fn load(state: AsyncState, cfg: StateConfig) {
+pub fn load(state: AsyncState) {
     let mut state = state.lock().unwrap();
 
-    let file = match std::fs::File::open(cfg.path) {
+    let file = match std::fs::File::open(state.path.clone()) {
         Ok(file) => file,
         Err(_) => return,
     };
@@ -40,15 +39,17 @@ pub fn load(state: AsyncState, cfg: StateConfig) {
 }
 
 pub struct State {
-    store: MemoryStore,
-    config: StateConfig,
+    pub store: MemoryStore,
+    pub path: String,
+    pub enable: bool,
 }
 
 impl State {
-    pub fn new(state_config: &StateConfig) -> State {
+    pub fn new(path: String, enable: bool) -> State {
         State {
             store: MemoryStore::new(),
-            config: state_config.clone(),
+            path,
+            enable,
         }
     }
 
@@ -72,7 +73,7 @@ impl State {
         router_addr: &IpAddr,
         peer: &BGPkitPeer,
     ) -> Result<(), Box<dyn Error>> {
-        if !self.config.enable {
+        if !self.enable {
             return Ok(());
         }
 
@@ -87,7 +88,7 @@ impl State {
         peer: &BGPkitPeer,
         update: &Update,
     ) -> Result<bool, Box<dyn Error>> {
-        if !self.config.enable {
+        if !self.enable {
             // If the state is disabled, all updates are emited
             return Ok(true);
         }
@@ -117,7 +118,7 @@ impl Hash for TimedPrefix {
 }
 
 #[derive(Serialize, Deserialize)]
-struct MemoryStore {
+pub struct MemoryStore {
     routers: HashMap<IpAddr, Router>,
 }
 
@@ -313,15 +314,4 @@ pub async fn peer_up_withdraws_handler(
 
     // Sent to the event pipeline
     tx.send(buffer).unwrap();
-}
-
-pub async fn dump_handler(state: AsyncState, cfg: StateConfig) {
-    loop {
-        // TODO do not spawn this task if state is disabled
-        tokio::time::sleep(Duration::from_secs(cfg.interval)).await;
-        if cfg.enable {
-            log::debug!("state - dump handler - dumping state to {}", cfg.path);
-            dump(state.clone(), cfg.clone());
-        }
-    }
 }

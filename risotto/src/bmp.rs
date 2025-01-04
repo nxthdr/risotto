@@ -1,5 +1,3 @@
-use crate::state::{self, AsyncState};
-use crate::update::{decode_updates, format_update, synthesize_withdraw_update, UpdateHeader};
 use bgpkit_parser::bmp::messages::PerPeerFlags;
 use bgpkit_parser::models::Peer;
 use bgpkit_parser::parse_bmp_msg;
@@ -7,6 +5,10 @@ use bgpkit_parser::parser::bmp::messages::{BmpMessage, BmpMessageBody};
 use bytes::Bytes;
 use chrono::Utc;
 use core::net::IpAddr;
+use risotto_lib::state::{self, AsyncState};
+use risotto_lib::update::{
+    decode_updates, format_update, synthesize_withdraw_update, UpdateHeader,
+};
 use std::io::{Error, ErrorKind, Result};
 use std::sync::mpsc::Sender;
 use tokio::io::AsyncReadExt;

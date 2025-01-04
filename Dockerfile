@@ -4,7 +4,7 @@ WORKDIR /app
 
 COPY . .
 
-RUN cargo install --path .
+RUN cargo build --release
 
 FROM debian:stable-slim
 
@@ -12,7 +12,7 @@ RUN apt-get update \
     && apt-get install -y openssl \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /usr/local/cargo/bin/risotto /app/risotto
+COPY --from=builder /app/target/release/risotto /app/risotto
 
 EXPOSE 3000
 EXPOSE 4000

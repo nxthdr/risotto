@@ -2,8 +2,6 @@ mod api;
 mod bmp;
 mod producer;
 mod settings;
-mod state;
-mod update;
 
 use chrono::Local;
 use clap::Parser;
@@ -11,6 +9,8 @@ use clap_verbosity_flag::{InfoLevel, Verbosity};
 use config::Config;
 use env_logger::Builder;
 use log::{debug, info};
+use risotto_lib::state;
+use risotto_lib::state::{AsyncState, State};
 use std::error::Error;
 use std::io::Write;
 use std::sync::mpsc::{channel, Receiver, Sender};
@@ -18,8 +18,6 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio_graceful::Shutdown;
-
-use crate::state::AsyncState;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -92,7 +90,19 @@ async fn producer_handler(cfg: Arc<Config>, rx: Receiver<Vec<u8>>) {
 async fn state_handler(state: AsyncState, cfg: Arc<Config>) {
     let cfg = settings::get_state_config(&cfg).unwrap();
 
-    state::dump_handler(state.clone(), cfg.clone()).await;
+    loop {
+        {
+            let state_lock: std::sync::MutexGuard<'_, State> = state.lock().unwrap();
+            if !state_lock.enable {
+                continue;
+            }
+
+            log::debug!("state - dump handler - dumping state");
+            state::dump(state.clone());
+        }
+
+        tokio::time::sleep(Duration::from_secs(cfg.interval)).await;
+    }
 }
 
 #[tokio::main]
@@ -101,14 +111,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let cfg = load_settings(&cli.config);
     let state_config = settings::get_state_config(&cfg).unwrap();
-    let state = state::new_state(&state_config);
+    let state = state::new_state(state_config.path, state_config.enable);
     let shutdown: Shutdown = Shutdown::default();
 
     set_logging(&cli);
 
     // Load the state if enabled
     if state_config.enable {
-        state::load(state.clone(), state_config.clone());
+        state::load(state.clone());
     }
 
     // MPSC channel to communicate between BMP tasks and producer task
