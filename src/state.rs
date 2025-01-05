@@ -1,4 +1,4 @@
-use bgpkit_parser::models::{NetworkPrefix, Peer as BGPkitPeer};
+use bgpkit_parser::models::{NetworkPrefix, Origin, Peer as BGPkitPeer};
 use chrono::Utc;
 use core::net::IpAddr;
 use rand::Rng;
@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use crate::settings::StateConfig;
-use crate::update::{format_update, synthesize_withdraw_update, Update};
+use crate::update::{format_update, Update};
 
 pub type AsyncState = Arc<Mutex<State>>;
 
@@ -100,12 +100,15 @@ impl State {
 pub struct TimedPrefix {
     pub prefix: NetworkPrefix,
     pub is_post_policy: bool,
+    pub is_adj_rib_out: bool,
     pub timestamp: i64,
 }
 
 impl PartialEq for TimedPrefix {
     fn eq(&self, other: &Self) -> bool {
-        self.prefix == other.prefix && self.is_post_policy == other.is_post_policy
+        self.prefix == other.prefix
+            && self.is_post_policy == other.is_post_policy
+            && self.is_adj_rib_out == other.is_adj_rib_out
     }
 }
 
@@ -113,6 +116,7 @@ impl Hash for TimedPrefix {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.prefix.hash(state);
         self.is_post_policy.hash(state);
+        self.is_adj_rib_out.hash(state);
     }
 }
 
@@ -226,6 +230,7 @@ impl Router {
         let timed_prefix = TimedPrefix {
             prefix: update.prefix,
             is_post_policy: update.is_post_policy,
+            is_adj_rib_out: update.is_adj_rib_out,
             timestamp: now,
         };
 
@@ -241,6 +246,20 @@ impl Router {
             peer.updates.remove(&timed_prefix);
         }
         return emit;
+    }
+}
+
+pub fn synthesize_withdraw_update(prefix: TimedPrefix) -> Update {
+    Update {
+        prefix: prefix.prefix,
+        announced: false,
+        origin: Origin::INCOMPLETE,
+        path: None,
+        communities: vec![],
+        is_post_policy: prefix.is_post_policy,
+        is_adj_rib_out: prefix.is_adj_rib_out,
+        timestamp: Utc::now(),
+        synthetic: true,
     }
 }
 
@@ -277,9 +296,7 @@ pub async fn peer_up_withdraws_handler(
 
     drop(state_lock);
 
-    let now = Utc::now();
     let mut synthetic_updates = Vec::new();
-
     for update in peer.updates {
         if update.timestamp < startup.timestamp_millis() {
             // This update has been re-announced after startup
@@ -287,7 +304,7 @@ pub async fn peer_up_withdraws_handler(
             synthetic_updates.push((
                 router_addr.clone(),
                 peer.details.clone(),
-                synthesize_withdraw_update(update.prefix.clone(), now.clone()),
+                synthesize_withdraw_update(update.clone()),
             ));
         }
     }

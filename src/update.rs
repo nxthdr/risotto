@@ -8,6 +8,7 @@ use log::error;
 pub struct UpdateHeader {
     pub timestamp: i64,
     pub is_post_policy: bool,
+    pub is_adj_rib_out: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -18,6 +19,7 @@ pub struct Update {
     pub path: Option<AsPath>,
     pub communities: Vec<MetaCommunity>,
     pub is_post_policy: bool,
+    pub is_adj_rib_out: bool,
     pub timestamp: DateTime<Utc>,
     pub synthetic: bool,
 }
@@ -82,6 +84,7 @@ pub fn decode_updates(message: RouteMonitoring, header: UpdateHeader) -> Option<
                     path: path.clone(),
                     communities: communities.clone(),
                     is_post_policy: header.is_post_policy,
+                    is_adj_rib_out: header.is_adj_rib_out,
                     timestamp,
                     synthetic: false,
                 });
@@ -90,19 +93,6 @@ pub fn decode_updates(message: RouteMonitoring, header: UpdateHeader) -> Option<
             return Some(updates);
         }
         _ => None,
-    }
-}
-
-pub fn synthesize_withdraw_update(prefix: NetworkPrefix, timestamp: DateTime<Utc>) -> Update {
-    Update {
-        prefix,
-        announced: false,
-        origin: Origin::INCOMPLETE,
-        path: None,
-        communities: vec![],
-        is_post_policy: false,
-        timestamp,
-        synthetic: true,
     }
 }
 
@@ -152,7 +142,7 @@ fn map_to_ipv6(ip: IpAddr) -> IpAddr {
 }
 
 // Returns a CSV line corresponding to this schema
-// timestamp,router_addr,router_port,peer_addr,peer_bgp_id,peer_asn,prefix_addr,prefix_len,announced,is_post_policy,origin,path,communities,synthetic
+// timestamp,router_addr,router_port,peer_addr,peer_bgp_id,peer_asn,prefix_addr,prefix_len,announced,is_post_policy,is_adj_rib_out,origin,path,communities,synthetic
 pub fn format_update(
     router_addr: IpAddr,
     router_port: u16,
@@ -183,6 +173,7 @@ pub fn format_update(
     row.push(format!("{}", map_to_ipv6(update.prefix.prefix.addr())));
     row.push(format!("{}", update.prefix.prefix.prefix_len()));
     row.push(format!("{}", update.is_post_policy));
+    row.push(format!("{}", update.is_adj_rib_out));
     row.push(format!("{}", update.announced));
     row.push(format!("{}", update.origin));
     row.push(format!("{}", as_path_str));
