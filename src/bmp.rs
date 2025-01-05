@@ -1,11 +1,10 @@
 use crate::state::{self, AsyncState};
-use crate::update::{decode_updates, format_update, synthesize_withdraw_update, UpdateHeader};
+use crate::update::{decode_updates, format_update, UpdateHeader};
 use bgpkit_parser::bmp::messages::PerPeerFlags;
 use bgpkit_parser::models::Peer;
 use bgpkit_parser::parse_bmp_msg;
 use bgpkit_parser::parser::bmp::messages::{BmpMessage, BmpMessageBody};
 use bytes::Bytes;
-use chrono::Utc;
 use core::net::IpAddr;
 use std::io::{Error, ErrorKind, Result};
 use std::sync::mpsc::Sender;
@@ -71,6 +70,11 @@ async fn process_bmp_packet(
         PerPeerFlags::LocalRibPeerFlags(_) => false,
     };
 
+    let is_adj_rib_out = match pph.peer_flags {
+        PerPeerFlags::PeerFlags(flags) => flags.is_adj_rib_out(),
+        PerPeerFlags::LocalRibPeerFlags(_) => false,
+    };
+
     match message.message_body {
         BmpMessageBody::PeerUpNotification(body) => {
             log::trace!("{:?}", body);
@@ -90,6 +94,7 @@ async fn process_bmp_packet(
             let header = UpdateHeader {
                 timestamp,
                 is_post_policy,
+                is_adj_rib_out,
             };
 
             let potential_updates = decode_updates(body, header).unwrap_or(Vec::new());
@@ -125,12 +130,8 @@ async fn process_bmp_packet(
             // We start by emiting synthetic withdraw updates
             let mut synthetic_updates = Vec::new();
             let updates = state_lock.get_updates_by_peer(&router_addr, &peer).unwrap();
-            let now = Utc::now();
             for prefix in updates {
-                synthetic_updates.push(synthesize_withdraw_update(
-                    prefix.prefix.clone(),
-                    now.clone(),
-                ));
+                synthetic_updates.push(state::synthesize_withdraw_update(prefix.clone()));
             }
 
             // Then update the state
