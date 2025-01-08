@@ -40,21 +40,15 @@ pub fn decode_updates(message: RouteMonitoring, header: UpdateHeader) -> Option<
 
             // https://datatracker.ietf.org/doc/html/rfc4760
             let attributes = bgp_update.attributes;
-            match attributes.get_reachable_nlri() {
-                Some(nlri) => {
-                    for prefix in &nlri.prefixes {
-                        prefixes_to_update.push((*prefix, true));
-                    }
+            if let Some(nlri) = attributes.get_reachable_nlri() {
+                for prefix in &nlri.prefixes {
+                    prefixes_to_update.push((*prefix, true));
                 }
-                None => (),
             }
-            match attributes.get_unreachable_nlri() {
-                Some(nlri) => {
-                    for prefix in &nlri.prefixes {
-                        prefixes_to_update.push((*prefix, false));
-                    }
+            if let Some(nlri) = attributes.get_unreachable_nlri() {
+                for prefix in &nlri.prefixes {
+                    prefixes_to_update.push((*prefix, false));
                 }
-                None => (),
             }
 
             // Get the other attributes
@@ -90,7 +84,7 @@ pub fn decode_updates(message: RouteMonitoring, header: UpdateHeader) -> Option<
                 });
             }
 
-            return Some(updates);
+            Some(updates)
         }
         _ => None,
     }
@@ -102,13 +96,10 @@ pub fn construct_as_path(path: Option<AsPath>) -> Vec<u32> {
             let mut contructed_path: Vec<u32> = Vec::new();
             path.coalesce();
             for segment in path.into_segments_iter() {
-                match segment {
-                    AsPathSegment::AsSequence(dedup_asns) => {
-                        for asn in dedup_asns {
-                            contructed_path.push(asn.to_u32());
-                        }
+                if let AsPathSegment::AsSequence(dedup_asns) = segment {
+                    for asn in dedup_asns {
+                        contructed_path.push(asn.to_u32());
                     }
-                    _ => (),
                 }
             }
             contructed_path
@@ -117,13 +108,13 @@ pub fn construct_as_path(path: Option<AsPath>) -> Vec<u32> {
     }
 }
 
-pub fn construct_communities(communities: Vec<MetaCommunity>) -> Vec<(u32, u16)> {
+pub fn construct_communities(communities: &[MetaCommunity]) -> Vec<(u32, u16)> {
     let mut constructed_communities = Vec::new();
     for community in communities {
         match community {
             MetaCommunity::Plain(community) => match community {
                 bgpkit_parser::models::Community::Custom(asn, value) => {
-                    constructed_communities.push((asn.to_u32(), value));
+                    constructed_communities.push((asn.to_u32(), *value));
                 }
                 _ => (), // TODO
             },
@@ -135,7 +126,7 @@ pub fn construct_communities(communities: Vec<MetaCommunity>) -> Vec<(u32, u16)>
 
 fn map_to_ipv6(ip: IpAddr) -> IpAddr {
     if ip.is_ipv4() {
-        format!("::ffff:{}", ip.to_string()).parse().unwrap()
+        format!("::ffff:{}", ip).parse().unwrap()
     } else {
         ip
     }
@@ -147,7 +138,7 @@ pub fn format_update(
     router_addr: IpAddr,
     router_port: u16,
     peer: &Peer,
-    update: &Update,
+    update: &mut Update,
 ) -> String {
     let as_path_str = construct_as_path(update.path.clone())
         .iter()
@@ -156,7 +147,7 @@ pub fn format_update(
         .join(",");
     let as_path_str = format!("\"[{}]\"", as_path_str);
 
-    let communities_str = construct_communities(update.communities.clone())
+    let communities_str = construct_communities(update.communities.as_ref())
         .iter()
         .map(|x| format!("({},{})", x.0, x.1))
         .collect::<Vec<String>>()
@@ -180,5 +171,5 @@ pub fn format_update(
     row.push(format!("{}", communities_str));
     row.push(format!("{}", update.synthetic));
 
-    return row.join(",");
+    row.join(",")
 }

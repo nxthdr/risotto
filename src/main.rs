@@ -23,7 +23,7 @@ use crate::state::AsyncState;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
-struct CLI {
+struct Cli {
     #[arg(short, long)]
     config: String,
 
@@ -31,7 +31,7 @@ struct CLI {
     verbose: Verbosity<InfoLevel>,
 }
 
-fn set_logging(cli: &CLI) {
+fn set_logging(cli: &Cli) {
     Builder::new()
         .format(|buf, record| {
             writeln!(
@@ -97,7 +97,7 @@ async fn state_handler(state: AsyncState, cfg: Arc<Config>) {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    let cli = CLI::parse();
+    let cli = Cli::parse();
 
     let cfg = load_settings(&cli.config);
     let state_config = settings::get_state_config(&cfg).unwrap();

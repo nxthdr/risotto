@@ -143,7 +143,7 @@ pub async fn handle(cfg: &KafkaConfig, rx: Receiver<Vec<u8>>) {
 
         // Send the collected messages to Kafka in batches
         let mut data = Cursor::new(data);
-        match produce_impl(&mut producer, &cfg, &mut data) {
+        match produce_impl(&mut producer, cfg, &mut data) {
             Ok(n) => {
                 log::info!("producer - produced {} messages", n)
             }

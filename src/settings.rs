@@ -89,5 +89,5 @@ pub fn host(address: String, port: i64, accept_fqdn: bool) -> String {
             }
         }
     };
-    return format!("{}:{}", host, port);
+    format!("{}:{}", host, port)
 }

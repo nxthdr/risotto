@@ -40,12 +40,10 @@ pub async fn unmarshal_bmp_packet(socket: &mut TcpStream) -> Result<BmpMessage> 
     // Parse the BMP message
     match parse_bmp_msg(&mut bytes) {
         Ok(message) => Ok(message),
-        Err(_) => {
-            return Err(Error::new(
-                ErrorKind::InvalidData,
-                format!("failed to parse BMP message"),
-            ));
-        }
+        Err(_) => Err(Error::new(
+            ErrorKind::InvalidData,
+            "failed to parse BMP message".to_string(),
+        )),
     }
 }
 
@@ -97,7 +95,7 @@ async fn process_bmp_packet(
                 is_adj_rib_out,
             };
 
-            let potential_updates = decode_updates(body, header).unwrap_or(Vec::new());
+            let potential_updates = decode_updates(body, header).unwrap_or_default();
 
             let mut legitimate_updates = Vec::new();
             for update in potential_updates {
@@ -108,8 +106,8 @@ async fn process_bmp_packet(
             }
 
             let mut buffer = vec![];
-            for update in legitimate_updates {
-                let update = format_update(router_addr, router_port, &peer, &update);
+            for mut update in legitimate_updates {
+                let update = format_update(router_addr, router_port, &peer, &mut update);
                 log::trace!("{:?}", update);
                 buffer.extend(update.as_bytes());
                 buffer.extend(b"\n");
@@ -138,8 +136,8 @@ async fn process_bmp_packet(
             state_lock.remove_updates(&router_addr, &peer).unwrap();
 
             let mut buffer = vec![];
-            for update in synthetic_updates {
-                let update = format_update(router_addr, router_port, &peer, &update);
+            for mut update in synthetic_updates {
+                let update = format_update(router_addr, router_port, &peer, &mut update);
                 log::trace!("{:?}", update);
                 buffer.extend(update.as_bytes());
                 buffer.extend(b"\n");

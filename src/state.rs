@@ -15,6 +15,8 @@ use crate::update::{format_update, Update};
 
 pub type AsyncState = Arc<Mutex<State>>;
 
+type RouterPeerUpdate = (IpAddr, IpAddr, TimedPrefix);
+
 pub fn new_state(state_config: &StateConfig) -> AsyncState {
     Arc::new(Mutex::new(State::new(state_config)))
 }
@@ -53,7 +55,7 @@ impl State {
     }
 
     // Get all the updates from the state
-    pub fn get_all(&self) -> Result<Vec<(IpAddr, IpAddr, TimedPrefix)>, Box<dyn Error>> {
+    pub fn get_all(&self) -> Result<Vec<RouterPeerUpdate>, Box<dyn Error>> {
         Ok(self.store.get_all())
     }
 
@@ -133,19 +135,16 @@ impl MemoryStore {
     }
 
     fn _get_router(&mut self, router_addr: &IpAddr) -> &mut Router {
-        let router = self
-            .routers
-            .entry(router_addr.clone())
-            .or_insert(Router::new());
+        let router = self.routers.entry(*router_addr).or_insert(Router::new());
         router
     }
 
-    fn get_all(&self) -> Vec<(IpAddr, IpAddr, TimedPrefix)> {
+    fn get_all(&self) -> Vec<RouterPeerUpdate> {
         let mut res = Vec::new();
         for (router_addr, router) in &self.routers {
             for (peer_addr, peer) in &router.peers {
                 for update in &peer.updates {
-                    res.push((router_addr.clone(), peer_addr.clone(), update.clone()));
+                    res.push((*router_addr, *peer_addr, update.clone()));
                 }
             }
         }
@@ -162,7 +161,7 @@ impl MemoryStore {
         let router_binding = Router::new();
         let router = self.routers.get(router_addr).unwrap_or(&router_binding);
         let peer_binding = Peer {
-            details: peer.clone(),
+            details: *peer,
             updates: HashSet::new(),
         };
         let updates = router
@@ -170,11 +169,7 @@ impl MemoryStore {
             .get(&peer.peer_address)
             .unwrap_or(&peer_binding);
 
-        updates
-            .updates
-            .iter()
-            .map(|timed_prefix| timed_prefix.clone())
-            .collect()
+        updates.updates.iter().cloned().collect()
     }
 
     fn remove_peer(&mut self, router_addr: &IpAddr, peer: &BGPkitPeer) {
@@ -207,15 +202,10 @@ impl Router {
     }
 
     fn add_peer(&mut self, peer: &BGPkitPeer) {
-        if !self.peers.contains_key(&peer.peer_address) {
-            self.peers.insert(
-                peer.peer_address.clone(),
-                Peer {
-                    details: *peer,
-                    updates: HashSet::new(),
-                },
-            );
-        }
+        self.peers.entry(peer.peer_address).or_insert_with(|| Peer {
+            details: *peer,
+            updates: HashSet::new(),
+        });
     }
 
     fn remove_peer(&mut self, peer: &BGPkitPeer) {
@@ -223,7 +213,7 @@ impl Router {
     }
 
     fn update(&mut self, peer: &BGPkitPeer, update: &Update) -> bool {
-        self.add_peer(&peer);
+        self.add_peer(peer);
         let peer = self.peers.get_mut(&peer.peer_address).unwrap();
 
         let now: i64 = chrono::Utc::now().timestamp_millis();
@@ -245,7 +235,7 @@ impl Router {
             // Withdrawn prefix: remove the update if present
             peer.updates.remove(&timed_prefix);
         }
-        return emit;
+        emit
     }
 }
 
@@ -302,8 +292,8 @@ pub async fn peer_up_withdraws_handler(
             // This update has been re-announced after startup
             // Emit a synthetic withdraw update
             synthetic_updates.push((
-                router_addr.clone(),
-                peer.details.clone(),
+                router_addr,
+                peer.details,
                 synthesize_withdraw_update(update.clone()),
             ));
         }
@@ -311,14 +301,14 @@ pub async fn peer_up_withdraws_handler(
 
     let mut state_lock: std::sync::MutexGuard<'_, State> = state.lock().unwrap();
     let mut buffer: Vec<u8> = vec![];
-    for (router_addr, peer, update) in &synthetic_updates {
-        let update_str = format_update(*router_addr, 0, &peer, &update);
+    for (router_addr, peer, update) in &mut synthetic_updates {
+        let update_str = format_update(*router_addr, 0, peer, update);
         log::trace!("{:?}", update_str);
         buffer.extend(update_str.as_bytes());
         buffer.extend(b"\n");
 
         // Remove the update from the state
-        state_lock.store.update(&router_addr, &peer, &update);
+        state_lock.store.update(router_addr, peer, update);
     }
 
     log::info!(
