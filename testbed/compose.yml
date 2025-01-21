@@ -11,6 +11,9 @@ services:
     networks:
       testbed:
         ipv4_address: 10.0.0.10
+    depends_on:
+      - redpanda
+      - clickhouse
 
   bird_20:
     image: ghcr.io/nxthdr/bird:2.16
@@ -24,15 +27,28 @@ services:
     networks:
       testbed:
         ipv4_address: 10.0.0.20
+    depends_on:
+      - redpanda
+      - clickhouse
 
   redpanda:
-    image: vectorized/redpanda:latest
+    image: redpandadata/redpanda:latest
     command: redpanda start --check=false --overprovisioned --smp 1 --memory 500M
     volumes:
       - ./config/redpanda/redpanda.yml:/etc/redpanda/redpanda.yaml:ro
     networks:
       testbed:
         ipv4_address: 10.0.0.100
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    volumes:
+    - ./config/clickhouse/docker-entrypoint-initdb.d:/docker-entrypoint-initdb.d
+    networks:
+      testbed:
+        ipv4_address: 10.0.0.200
+    depends_on:
+      - redpanda
 
   risotto:
     build: ..
@@ -43,9 +59,10 @@ services:
       - "3000:3000"
     networks:
       testbed:
-        ipv4_address: 10.0.0.200
+        ipv4_address: 10.0.0.99
     depends_on:
       - redpanda
+      - clickhouse
 
 networks:
   testbed:

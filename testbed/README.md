@@ -5,7 +5,11 @@ Docker Compose setup to facilitate the tests of Risotto.
 The testbed consists in two [Bird](https://bird.network.cz/) routers exchanging static routes via a eBGP session.
 Check out the [routers](./config/bird/) and [Risotto](./config/risotto/) configuration.
 
-Both routers are configured to send BMP messages to the Risotto instance accessible at the bridge IP address `10.0.0.100`, with the Kafka endpoint disabled in Risotto's configuration.
+Both routers are configured to send BMP messages to the Risotto instance accessible at the bridge IP address `10.0.0.100`.
+Risotto sends the BMP messages to a Redpanda instance.
+
+The `risotto.from_kafka` table is using the ClickHouse [Kafka engine](https://clickhouse.com/docs/en/engines/table-engines/integrations/kafka) to fetch the results from Redpanda. The `risotto.updates` table is used to store the results.
+
 
 ## Usage
 
