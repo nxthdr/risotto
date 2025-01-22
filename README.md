@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="logo/logo.png" height="256" width="256" alt="Project Logo" />
+</p>
+
 # Risotto
 
 > [!WARNING]
