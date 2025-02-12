@@ -4,9 +4,6 @@
 
 # Risotto
 
-> [!WARNING]
-> Currently in early-stage development.
-
 Risotto 😋 is a BGP updates collector that gathers BGP updates from routers via BMP and streams them into an events pipeline, such as Apache Kafka or Redpanda.
 
 ## State Management
