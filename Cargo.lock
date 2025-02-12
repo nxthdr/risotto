@@ -1879,16 +1879,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "prefix-trie"
-version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eb5f930995ba4986bd239ba8d8fded67cad82d1db329c4f316f312847cba16aa"
-dependencies = [
- "ipnet",
- "num-traits",
-]
-
-[[package]]
 name = "prettyplease"
 version = "0.2.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2213,12 +2203,10 @@ dependencies = [
  "clap-verbosity-flag",
  "config",
  "env_logger",
- "hex",
  "kafka",
  "log",
  "metrics",
  "metrics-exporter-prometheus",
- "prefix-trie",
  "rand 0.9.0",
  "serde",
  "serde_json",
