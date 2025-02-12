@@ -261,8 +261,8 @@ pub async fn peer_up_withdraws_handler(
 ) {
     let startup = chrono::Utc::now();
     let random = {
-        let mut rng = rand::thread_rng();
-        rng.gen_range(-60.0..60.0) as i64
+        let mut rng = rand::rng();
+        rng.random_range(-60.0..60.0) as i64
     };
     let sleep_time = 300 + random; // 5 minutes +/- 1 minute
 

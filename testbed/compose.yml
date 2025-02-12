@@ -43,7 +43,7 @@ services:
   clickhouse:
     image: clickhouse/clickhouse-server:latest
     volumes:
-    - ./config/clickhouse/docker-entrypoint-initdb.d:/docker-entrypoint-initdb.d
+      - ./config/clickhouse/docker-entrypoint-initdb.d:/docker-entrypoint-initdb.d
     networks:
       testbed:
         ipv4_address: 10.0.0.200
