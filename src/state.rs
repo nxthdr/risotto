@@ -20,12 +20,13 @@ type RouterPeerUpdate = (IpAddr, IpAddr, TimedPrefix);
 pub fn new_state(state_config: &StateConfig) -> AsyncState {
     Arc::new(Mutex::new(State::new(state_config)))
 }
-
 pub fn dump(state: AsyncState) {
     let state = state.lock().unwrap();
-    let file = std::fs::File::create(state.config.path.clone()).unwrap();
+    let temp_path = format!("{}.tmp", state.config.path);
+    let file = std::fs::File::create(&temp_path).unwrap();
     let mut writer = std::io::BufWriter::new(file);
     serde_json::to_writer(&mut writer, &state.store).unwrap();
+    std::fs::rename(temp_path, state.config.path.clone()).unwrap();
 }
 
 pub fn load(state: AsyncState) {
