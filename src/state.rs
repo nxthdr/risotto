@@ -10,7 +10,7 @@ use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use crate::settings::StateConfig;
+use crate::config::StateConfig;
 use crate::update::{format_update, Update};
 
 pub type AsyncState = Arc<Mutex<State>>;
@@ -258,7 +258,7 @@ pub async fn peer_up_withdraws_handler(
     state: AsyncState,
     router_addr: IpAddr,
     bgp_peer: BGPkitPeer,
-    tx: Sender<Vec<u8>>,
+    tx: Sender<String>,
 ) {
     let startup = chrono::Utc::now();
     let random = {
@@ -300,18 +300,6 @@ pub async fn peer_up_withdraws_handler(
         }
     }
 
-    let mut state_lock: std::sync::MutexGuard<'_, State> = state.lock().unwrap();
-    let mut buffer: Vec<u8> = vec![];
-    for (router_addr, peer, update) in &mut synthetic_updates {
-        let update_str = format_update(*router_addr, 0, peer, update);
-        log::trace!("{:?}", update_str);
-        buffer.extend(update_str.as_bytes());
-        buffer.extend(b"\n");
-
-        // Remove the update from the state
-        state_lock.store.update(router_addr, peer, update);
-    }
-
     log::info!(
         "state - startup withdraws handler - {} - {} emitting {} synthetic withdraw updates",
         router_addr,
@@ -319,8 +307,17 @@ pub async fn peer_up_withdraws_handler(
         synthetic_updates.len()
     );
 
-    // Sent to the event pipeline
-    tx.send(buffer).unwrap();
+    let mut state_lock: std::sync::MutexGuard<'_, State> = state.lock().unwrap();
+    for (router_addr, peer, update) in &mut synthetic_updates {
+        let update_str = format_update(*router_addr, 0, peer, update);
+        log::trace!("{:?}", update_str);
+
+        // Sent to the event pipeline
+        tx.send(update_str).unwrap();
+
+        // Remove the update from the state
+        state_lock.store.update(router_addr, peer, update);
+    }
 }
 
 pub async fn dump_handler(state: AsyncState, cfg: StateConfig) {

@@ -1,155 +1,127 @@
-use kafka::client::{Compression, DEFAULT_CONNECTION_IDLE_TIMEOUT_MILLIS};
-use kafka::producer::{AsBytes, Producer, Record, RequiredAcks, DEFAULT_ACK_TIMEOUT_MILLIS};
-use std::error::Error;
-use std::io::BufRead;
-use std::io::Cursor;
-use std::ops::{Deref, DerefMut};
-use std::sync::mpsc::{Receiver, TryRecvError};
+use anyhow::Result;
+use log::{debug, info, trace, warn};
+use rdkafka::config::ClientConfig;
+use rdkafka::message::OwnedHeaders;
+use rdkafka::producer::{FutureProducer, FutureRecord};
+use std::sync::mpsc::Receiver;
 use std::time::Duration;
 
-use crate::settings::KafkaConfig;
+use crate::config::KafkaConfig;
 
-struct Trimmed(String);
-
-impl AsBytes for Trimmed {
-    fn as_bytes(&self) -> &[u8] {
-        self.0.trim().as_bytes()
-    }
+#[derive(Clone)]
+pub struct SaslAuth {
+    pub username: String,
+    pub password: String,
+    pub mechanism: String,
 }
 
-impl Deref for Trimmed {
-    type Target = String;
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
+#[derive(Clone)]
+pub enum KafkaAuth {
+    SasalPlainText(SaslAuth),
+    PlainText,
 }
 
-impl DerefMut for Trimmed {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
+pub async fn handle(config: &KafkaConfig, rx: Receiver<String>) -> Result<()> {
+    // Configure Kafka authentication
+    let kafka_auth = match config.auth_protocol.as_str() {
+        "PLAINTEXT" => KafkaAuth::PlainText,
+        "SASL_PLAINTEXT" => KafkaAuth::SasalPlainText(SaslAuth {
+            username: config.auth_sasl_username.clone(),
+            password: config.auth_sasl_password.clone(),
+            mechanism: config.auth_sasl_mechanism.clone(),
+        }),
+        _ => {
+            return Err(anyhow::anyhow!(
+                "Invalid Kafka producer authentication protocol"
+            ))
+        }
+    };
+
+    if config.enable == false {
+        warn!("producer - disabled");
+        loop {
+            rx.recv().unwrap();
+        }
     }
-}
 
-fn produce_impl(
-    producer: &mut Producer,
-    cfg: &KafkaConfig,
-    data: &mut dyn BufRead,
-) -> Result<usize, Box<dyn Error>> {
-    // ~ a buffer of prepared records to be send in a batch to Kafka
-    // ~ in the loop following, we'll only modify the 'value' of the
-    // cached records
-    let mut rec_stash: Vec<Record<'_, (), Trimmed>> = (0..cfg.batch_max_size)
-        .map(|_| Record::from_value(&cfg.topic, Trimmed(String::new())))
-        .collect();
+    let producer: &FutureProducer = match kafka_auth {
+        KafkaAuth::PlainText => &ClientConfig::new()
+            .set("bootstrap.servers", config.brokers.clone())
+            .set("message.timeout.ms", "5000")
+            .create()
+            .expect("Producer creation error"),
+        KafkaAuth::SasalPlainText(scram_auth) => &ClientConfig::new()
+            .set("bootstrap.servers", config.brokers.clone())
+            .set("message.timeout.ms", "5000")
+            .set("sasl.username", scram_auth.username)
+            .set("sasl.password", scram_auth.password)
+            .set("sasl.mechanisms", scram_auth.mechanism)
+            .set("security.protocol", "SASL_PLAINTEXT")
+            .create()
+            .expect("Producer creation error"),
+    };
 
-    // ~ points to the next free slot in `rec_stash`.  if it reaches
-    // `rec_stash.len()` we'll send `rec_stash` to kafka
-    let mut next_rec = 0;
-    let mut n_rec = 0;
+    // Send to Kafka
+    let mut additional_message: Option<String> = None;
     loop {
-        // ~ send out a batch if it's ready
-        if next_rec == rec_stash.len() {
-            send_batch(producer, &rec_stash)?;
-            next_rec = 0;
+        let start_time = std::time::Instant::now();
+        let mut final_message = String::new();
+        let mut n_messages = 0;
+
+        // Send the additional message first
+        if let Some(message) = additional_message {
+            final_message.push_str(&message);
+            final_message.push_str("\n");
+            n_messages += 1;
+            additional_message = None;
         }
-        let rec = &mut rec_stash[next_rec];
-        rec.value.clear();
-        if data.read_line(&mut rec.value)? == 0 {
-            break; // ~ EOF reached
-        }
-        if rec.value.trim().is_empty() {
-            continue; // ~ skip empty lines
-        }
-        // ~ ok, we got a line. read the next one in a new buffer
-        next_rec += 1;
-        n_rec += 1;
-    }
-    // ~ flush pending messages - if any
-    if next_rec > 0 {
-        send_batch(producer, &rec_stash[..next_rec])?;
-    }
-    Ok(n_rec)
-}
 
-fn send_batch(
-    producer: &mut Producer,
-    batch: &[Record<'_, (), Trimmed>],
-) -> Result<(), Box<dyn Error>> {
-    let rs = producer.send_all(batch)?;
-
-    for r in rs {
-        for tpc in r.partition_confirms {
-            if let Err(code) = tpc.offset {
-                return Err(Box::new(kafka::error::Error::Kafka(code)));
-            }
-        }
-    }
-
-    Ok(())
-}
-
-pub async fn handle(cfg: &KafkaConfig, rx: Receiver<Vec<u8>>) {
-    // TODO: Allow multiple brokers via the config file
-    let mut client = kafka::client::KafkaClient::new(vec![cfg.host.to_owned()]);
-
-    // Wait until the metadata we succeed to reach the Kafka brokers
-    loop {
-        match client.load_metadata(&[cfg.topic.to_owned()]) {
-            Ok(_) => {
-                log::debug!("producer - metadata loaded");
+        loop {
+            let now = std::time::Instant::now();
+            if now.duration_since(start_time)
+                > std::time::Duration::from_millis(config.max_wait_time)
+            {
                 break;
             }
-            Err(_) => {
-                log::error!("producer - failed to load metadata: retrying in 5 seconds");
-                tokio::time::sleep(Duration::from_secs(5)).await;
-            }
-        }
-    }
 
-    // TODO: Allow compression setting via the config file
-    // TODO: Allow timeouts setting via the config file
-    let mut producer = Producer::from_client(client)
-        .with_ack_timeout(Duration::from_millis(DEFAULT_ACK_TIMEOUT_MILLIS))
-        .with_connection_idle_timeout(Duration::from_millis(
-            DEFAULT_CONNECTION_IDLE_TIMEOUT_MILLIS,
-        ))
-        .with_required_acks(RequiredAcks::One)
-        .with_compression(Compression::NONE)
-        .create()
-        .unwrap();
-
-    loop {
-        // Wait the batch wait time to collect messages
-        tokio::time::sleep(Duration::from_secs(cfg.batch_interval)).await;
-        let mut data = Vec::new();
-        loop {
-            // Collect all of the messages from BMP handler
-            match rx.try_recv() {
-                Ok(d) => data.extend(d),
-                Err(TryRecvError::Empty) => break,
-                Err(TryRecvError::Disconnected) => {
-                    log::error!("producer - BMP handler disconnected");
-                    return;
-                }
+            let message = rx.try_recv();
+            if message.is_err() {
+                continue;
             }
+
+            let message = message.unwrap();
+            trace!("producer - received - {}", message);
+
+            if message.len() + message.len() + 1 > config.message_max_bytes {
+                additional_message = Some(message);
+                break;
+            }
+
+            final_message.push_str(&message);
+            final_message.push_str("\n");
+            n_messages += 1;
         }
 
-        // If no data was collected within the batch waiting time,
-        // continue to the next iteration
-        if data.is_empty() {
-            log::debug!("producer - produced 0 messages");
+        if final_message.is_empty() {
             continue;
         }
 
-        // Send the collected messages to Kafka in batches
-        let mut data = Cursor::new(data);
-        match produce_impl(&mut producer, cfg, &mut data) {
-            Ok(n) => {
-                log::info!("producer - produced {} messages", n)
-            }
-            Err(e) => {
-                log::error!("producer - failed producing messages: {}", e);
-            }
-        };
+        // Remove the last newline character
+        final_message.pop();
+
+        debug!("producer - {}", final_message);
+        info!("producer - sending {} updates to Kafka", n_messages);
+
+        let delivery_status = producer
+            .send(
+                FutureRecord::to(config.topic.as_str())
+                    .payload(&format!("{}", final_message))
+                    .key("")
+                    .headers(OwnedHeaders::new()),
+                Duration::from_secs(0),
+            )
+            .await;
+
+        info!("producer - {:?}", delivery_status);
     }
 }

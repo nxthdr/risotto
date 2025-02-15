@@ -1,16 +1,16 @@
 mod api;
 mod bmp;
+mod config;
 mod producer;
-mod settings;
 mod state;
 mod update;
 
 use chrono::Local;
 use clap::Parser;
 use clap_verbosity_flag::{InfoLevel, Verbosity};
-use config::Config;
+use config::AppConfig;
 use env_logger::Builder;
-use log::{debug, info};
+use log::{debug, error, info};
 use std::error::Error;
 use std::io::Write;
 use std::sync::mpsc::{channel, Receiver, Sender};
@@ -19,6 +19,7 @@ use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio_graceful::Shutdown;
 
+use crate::config::app_config;
 use crate::state::AsyncState;
 
 #[derive(Parser, Debug)]
@@ -46,18 +47,8 @@ fn set_logging(cli: &Cli) {
         .init();
 }
 
-fn load_settings(config_path: &str) -> Arc<Config> {
-    let cfg = Config::builder()
-        .add_source(config::File::with_name(config_path))
-        .add_source(config::Environment::with_prefix("RISOTTO"))
-        .build()
-        .unwrap();
-    Arc::new(cfg)
-}
-
-async fn api_handler(state: AsyncState, cfg: Arc<Config>) {
-    let api_config = settings::get_api_config(&cfg).unwrap();
-
+async fn api_handler(state: AsyncState, cfg: Arc<AppConfig>) {
+    let api_config = cfg.api.clone();
     debug!("api - binding listener to {}", api_config.host);
     let api_listener = TcpListener::bind(api_config.host).await.unwrap();
 
@@ -65,8 +56,8 @@ async fn api_handler(state: AsyncState, cfg: Arc<Config>) {
     axum::serve(api_listener, app).await.unwrap();
 }
 
-async fn bmp_handler(state: AsyncState, cfg: Arc<Config>, tx: Sender<Vec<u8>>) {
-    let bmp_config = settings::get_bmp_config(&cfg).unwrap();
+async fn bmp_handler(state: AsyncState, cfg: Arc<AppConfig>, tx: Sender<String>) {
+    let bmp_config = cfg.bmp.clone();
 
     debug!("bmp - binding listener to {}", bmp_config.host);
     let bmp_listener = TcpListener::bind(bmp_config.host).await.unwrap();
@@ -83,14 +74,17 @@ async fn bmp_handler(state: AsyncState, cfg: Arc<Config>, tx: Sender<Vec<u8>>) {
     }
 }
 
-async fn producer_handler(cfg: Arc<Config>, rx: Receiver<Vec<u8>>) {
-    let cfg = settings::get_kafka_config(&cfg).unwrap();
+async fn producer_handler(cfg: Arc<AppConfig>, rx: Receiver<String>) {
+    let kafka_config = cfg.kafka.clone();
 
-    producer::handle(&cfg, rx).await;
+    match producer::handle(&kafka_config, rx).await {
+        Ok(_) => {}
+        Err(e) => error!("producer - {}", e),
+    }
 }
 
-async fn state_handler(state: AsyncState, cfg: Arc<Config>) {
-    let cfg = settings::get_state_config(&cfg).unwrap();
+async fn state_handler(state: AsyncState, cfg: Arc<AppConfig>) {
+    let cfg = cfg.state.clone();
 
     state::dump_handler(state.clone(), cfg.clone()).await;
 }
@@ -99,8 +93,8 @@ async fn state_handler(state: AsyncState, cfg: Arc<Config>) {
 async fn main() -> Result<(), Box<dyn Error>> {
     let cli = Cli::parse();
 
-    let cfg = load_settings(&cli.config);
-    let state_config = settings::get_state_config(&cfg).unwrap();
+    let cfg = Arc::new(app_config(&cli.config));
+    let state_config = cfg.state.clone();
     let state = state::new_state(&state_config);
     let shutdown: Shutdown = Shutdown::default();
 

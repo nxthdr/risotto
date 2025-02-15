@@ -6,6 +6,7 @@ use bgpkit_parser::parse_bmp_msg;
 use bgpkit_parser::parser::bmp::messages::{BmpMessage, BmpMessageBody};
 use bytes::Bytes;
 use core::net::IpAddr;
+use log::{error, info, trace};
 use std::io::{Error, ErrorKind, Result};
 use std::sync::mpsc::Sender;
 use tokio::io::AsyncReadExt;
@@ -49,7 +50,7 @@ pub async fn unmarshal_bmp_packet(socket: &mut TcpStream) -> Result<BmpMessage> 
 
 async fn process_bmp_packet(
     state: AsyncState,
-    tx: Sender<Vec<u8>>,
+    tx: Sender<String>,
     router_addr: IpAddr,
     router_port: u16,
     message: BmpMessage,
@@ -75,11 +76,10 @@ async fn process_bmp_packet(
 
     match message.message_body {
         BmpMessageBody::PeerUpNotification(body) => {
-            log::trace!("{:?}", body);
-            log::info!(
+            trace!("{:?}", body);
+            info!(
                 "bmp - PeerUpNotification: {} - {}",
-                router_addr,
-                peer.peer_address
+                router_addr, peer.peer_address
             );
 
             let spawn_state = state.clone();
@@ -88,7 +88,7 @@ async fn process_bmp_packet(
             });
         }
         BmpMessageBody::RouteMonitoring(body) => {
-            log::trace!("{:?}", body);
+            trace!("{:?}", body);
             let header = UpdateHeader {
                 timestamp,
                 is_post_policy,
@@ -105,23 +105,19 @@ async fn process_bmp_packet(
                 }
             }
 
-            let mut buffer = vec![];
             for mut update in legitimate_updates {
                 let update = format_update(router_addr, router_port, &peer, &mut update);
                 log::trace!("{:?}", update);
-                buffer.extend(update.as_bytes());
-                buffer.extend(b"\n");
-            }
 
-            // Sent to the event pipeline
-            tx.send(buffer).unwrap();
+                // Sent to the event pipeline
+                tx.send(update).unwrap();
+            }
         }
         BmpMessageBody::PeerDownNotification(body) => {
-            log::trace!("{:?}", body);
-            log::info!(
+            trace!("{:?}", body);
+            info!(
                 "bmp - PeerDownNotification: {} - {}",
-                router_addr,
-                peer.peer_address
+                router_addr, peer.peer_address
             );
 
             // Remove the peer and the associated updates from the state
@@ -135,22 +131,19 @@ async fn process_bmp_packet(
             // Then update the state
             state_lock.remove_updates(&router_addr, &peer).unwrap();
 
-            let mut buffer = vec![];
             for mut update in synthetic_updates {
                 let update = format_update(router_addr, router_port, &peer, &mut update);
-                log::trace!("{:?}", update);
-                buffer.extend(update.as_bytes());
-                buffer.extend(b"\n");
-            }
+                trace!("{:?}", update);
 
-            // Finally send the synthetic updates to the event pipeline
-            tx.send(buffer).unwrap();
+                // Send the synthetic updates to the event pipeline
+                tx.send(update).unwrap();
+            }
         }
         _ => (),
     }
 }
 
-pub async fn handle(socket: &mut TcpStream, state: AsyncState, tx: Sender<Vec<u8>>) {
+pub async fn handle(socket: &mut TcpStream, state: AsyncState, tx: Sender<String>) {
     // Get router IP information
     let socket_info = socket.peer_addr().unwrap();
     let router_ip = socket_info.ip();
@@ -168,22 +161,20 @@ pub async fn handle(socket: &mut TcpStream, state: AsyncState, tx: Sender<Vec<u8
                 // Invalid message, continue without processing
                 // From what I can see, it's often because of a packet length issue
                 // So for now, we will close the connection
-                log::error!("bmp - invalid BMP message: {}", e);
-                log::error!(
+                error!("bmp - invalid BMP message: {}", e);
+                error!(
                     "bmp - closing connection with {}:{}",
-                    router_ip,
-                    router_port
+                    router_ip, router_port
                 );
                 break;
             }
             Err(e) => {
                 // Other errors are unexpected
                 // Close the connection
-                log::error!("bmp - failed to unmarshal BMP message: {}", e);
-                log::error!(
+                error!("bmp - failed to unmarshal BMP message: {}", e);
+                error!(
                     "bmp - closing connection with {}:{}",
-                    router_ip,
-                    router_port
+                    router_ip, router_port
                 );
                 break;
             }

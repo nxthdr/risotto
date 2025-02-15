@@ -7,12 +7,12 @@ bmp:
   port: 4000
 
 kafka:
-  address: 10.0.0.100
-  port: 9092
+  enable: true
+  brokers: "10.0.0.100:9092"
+  auth_protocol: PLAINTEXT
   topic: risotto-updates
-  batch_max_size: 10
 
 state:
-  enable: true
-  path: /app/dump.txt
+  enable: false
+  path: /app/state.json
   save_interval: 10
