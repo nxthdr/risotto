@@ -98,9 +98,13 @@ pub struct KafkaConfig {
     /// Default: 1048576
     pub message_max_bytes: usize,
 
-    /// Kafka producer max wait time
+    /// Kafka producer batch wait time
     /// Default: 1000
-    pub max_wait_time: u64,
+    pub batch_wait_time: u64,
+
+    /// Kafka producer batch wait interval
+    /// Default: 100
+    pub batch_wait_interval: u64,
 }
 
 pub fn get_kafka_config(config: &Config) -> KafkaConfig {
@@ -125,7 +129,8 @@ pub fn get_kafka_config(config: &Config) -> KafkaConfig {
             .get_string("kafka.topic")
             .unwrap_or("risotto-updates".to_string()),
         message_max_bytes: config.get_int("kafka.message_max_bytes").unwrap_or(1048576) as usize,
-        max_wait_time: config.get_int("kafka.max_wait_time").unwrap_or(1000) as u64,
+        batch_wait_time: config.get_int("kafka.batch_wait_time").unwrap_or(1000) as u64,
+        batch_wait_interval: config.get_int("kafka.batch_wait_interval").unwrap_or(100) as u64,
     }
 }
 

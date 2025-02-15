@@ -77,15 +77,15 @@ pub async fn handle(config: &KafkaConfig, rx: Receiver<String>) -> Result<()> {
         }
 
         loop {
-            let now = std::time::Instant::now();
-            if now.duration_since(start_time)
-                > std::time::Duration::from_millis(config.max_wait_time)
+            if std::time::Instant::now().duration_since(start_time)
+                > std::time::Duration::from_millis(config.batch_wait_time)
             {
                 break;
             }
 
             let message = rx.try_recv();
             if message.is_err() {
+                tokio::time::sleep(Duration::from_millis(config.batch_wait_interval)).await;
                 continue;
             }
 

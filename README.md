@@ -38,13 +38,14 @@ bmp:
   port: 4000
 
 kafka:
-  host: kafka.example.com
-  port: 9092
+  enable: true
+  brokers: "kafka.example.com:9092"
+  auth_protocol: PLAINTEXT
   topic: bgp-updates
 
 state:
   enable: true
-  path: /app/dump.txt
+  path: /app/dump.json
   save_interval: 10
 ```
 
