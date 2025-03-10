@@ -128,7 +128,7 @@ pub fn get_kafka_config(config: &Config) -> KafkaConfig {
         topic: config
             .get_string("kafka.topic")
             .unwrap_or("risotto-updates".to_string()),
-        message_max_bytes: config.get_int("kafka.message_max_bytes").unwrap_or(1048576) as usize,
+        message_max_bytes: config.get_int("kafka.message_max_bytes").unwrap_or(990000) as usize,
         batch_wait_time: config.get_int("kafka.batch_wait_time").unwrap_or(1000) as u64,
         batch_wait_interval: config.get_int("kafka.batch_wait_interval").unwrap_or(100) as u64,
     }

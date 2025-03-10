@@ -1,5 +1,5 @@
 use anyhow::Result;
-use log::{debug, info, trace, warn};
+use log::{debug, error, info, trace, warn};
 use rdkafka::config::ClientConfig;
 use rdkafka::message::OwnedHeaders;
 use rdkafka::producer::{FutureProducer, FutureRecord};
@@ -92,7 +92,8 @@ pub async fn handle(config: &KafkaConfig, rx: Receiver<String>) -> Result<()> {
             let message = message.unwrap();
             trace!("producer - received - {}", message);
 
-            if message.len() + message.len() + 1 > config.message_max_bytes {
+            // Max message size is 1048576 bytes (including headers)
+            if final_message.len() + message.len() + 1 > config.message_max_bytes {
                 additional_message = Some(message);
                 break;
             }
@@ -122,6 +123,11 @@ pub async fn handle(config: &KafkaConfig, rx: Receiver<String>) -> Result<()> {
             )
             .await;
 
-        info!("producer - {:?}", delivery_status);
+        match delivery_status {
+            Ok(status) => info!("{:?}", status),
+            Err((error, _)) => {
+                error!("{}", error.to_string());
+            }
+        }
     }
 }
