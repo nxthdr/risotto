@@ -52,7 +52,7 @@ services:
 
   risotto:
     build: ..
-    command: -vv --config /config/risotto.yml
+    command: -v --config /config/risotto.yml
     volumes:
       - ./config/risotto/risotto.yml:/config/risotto.yml
     ports:

@@ -1,9 +1,10 @@
-use crate::state::AsyncState;
 use axum::{extract::State as AxumState, routing::get, Json, Router};
 use core::net::IpAddr;
 use metrics::{Key, Label, Recorder};
 use metrics_exporter_prometheus::PrometheusBuilder;
 use serde::{Deserialize, Serialize};
+
+use crate::state::AsyncState;
 
 static METADATA: metrics::Metadata =
     metrics::Metadata::new(module_path!(), metrics::Level::INFO, Some(module_path!()));

@@ -1,10 +1,9 @@
-use anyhow::Result;
-use log::{debug, error, info, trace, warn};
 use rdkafka::config::ClientConfig;
 use rdkafka::message::OwnedHeaders;
 use rdkafka::producer::{FutureProducer, FutureRecord};
 use std::sync::mpsc::Receiver;
 use std::time::Duration;
+use tracing::{debug, error, info, trace};
 
 use crate::config::KafkaConfig;
 
@@ -21,7 +20,7 @@ pub enum KafkaAuth {
     PlainText,
 }
 
-pub async fn handle(config: &KafkaConfig, rx: Receiver<String>) -> Result<()> {
+pub async fn handle(config: &KafkaConfig, rx: Receiver<String>) {
     // Configure Kafka authentication
     let kafka_auth = match config.auth_protocol.as_str() {
         "PLAINTEXT" => KafkaAuth::PlainText,
@@ -31,14 +30,13 @@ pub async fn handle(config: &KafkaConfig, rx: Receiver<String>) -> Result<()> {
             mechanism: config.auth_sasl_mechanism.clone(),
         }),
         _ => {
-            return Err(anyhow::anyhow!(
-                "Invalid Kafka producer authentication protocol"
-            ))
+            error!("Invalid Kafka producer authentication protocol");
+            return;
         }
     };
 
     if config.enable == false {
-        warn!("producer - disabled");
+        debug!("producer disabled");
         loop {
             rx.recv().unwrap();
         }
@@ -90,7 +88,7 @@ pub async fn handle(config: &KafkaConfig, rx: Receiver<String>) -> Result<()> {
             }
 
             let message = message.unwrap();
-            trace!("producer - received - {}", message);
+            trace!("received  {}", message);
 
             // Max message size is 1048576 bytes (including headers)
             if final_message.len() + message.len() + 1 > config.message_max_bytes {
@@ -110,8 +108,8 @@ pub async fn handle(config: &KafkaConfig, rx: Receiver<String>) -> Result<()> {
         // Remove the last newline character
         final_message.pop();
 
-        debug!("producer - {}", final_message);
-        info!("producer - sending {} updates to Kafka", n_messages);
+        debug!("{}", final_message);
+        info!("sending {} updates to Kafka", n_messages);
 
         let delivery_status = producer
             .send(

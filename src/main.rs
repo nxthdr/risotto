@@ -5,19 +5,16 @@ mod producer;
 mod state;
 mod update;
 
-use chrono::Local;
+use anyhow::Result;
 use clap::Parser;
 use clap_verbosity_flag::{InfoLevel, Verbosity};
 use config::AppConfig;
-use env_logger::Builder;
-use log::{debug, error, info};
-use std::error::Error;
-use std::io::Write;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio_graceful::Shutdown;
+use tracing::{debug, info};
 
 use crate::config::app_config;
 use crate::state::AsyncState;
@@ -32,24 +29,20 @@ struct Cli {
     verbose: Verbosity<InfoLevel>,
 }
 
-fn set_logging(cli: &Cli) {
-    Builder::new()
-        .format(|buf, record| {
-            writeln!(
-                buf,
-                "{} [{}] - {}",
-                Local::now().format("%Y-%m-%dT%H:%M:%S"),
-                record.level(),
-                record.args()
-            )
-        })
-        .filter_module("risotto", cli.verbose.log_level_filter())
-        .init();
+fn set_tracing(cli: &Cli) -> Result<()> {
+    let subscriber = tracing_subscriber::fmt()
+        .compact()
+        .with_file(true)
+        .with_line_number(true)
+        .with_max_level(cli.verbose)
+        .finish();
+    tracing::subscriber::set_global_default(subscriber)?;
+    Ok(())
 }
 
 async fn api_handler(state: AsyncState, cfg: Arc<AppConfig>) {
     let api_config = cfg.api.clone();
-    debug!("api - binding listener to {}", api_config.host);
+    debug!("binding api listener to {}", api_config.host);
     let api_listener = TcpListener::bind(api_config.host).await.unwrap();
 
     let app = api::app(state.clone());
@@ -59,7 +52,7 @@ async fn api_handler(state: AsyncState, cfg: Arc<AppConfig>) {
 async fn bmp_handler(state: AsyncState, cfg: Arc<AppConfig>, tx: Sender<String>) {
     let bmp_config = cfg.bmp.clone();
 
-    debug!("bmp - binding listener to {}", bmp_config.host);
+    debug!("binding bmp listener to {}", bmp_config.host);
     let bmp_listener = TcpListener::bind(bmp_config.host).await.unwrap();
 
     loop {
@@ -77,10 +70,7 @@ async fn bmp_handler(state: AsyncState, cfg: Arc<AppConfig>, tx: Sender<String>)
 async fn producer_handler(cfg: Arc<AppConfig>, rx: Receiver<String>) {
     let kafka_config = cfg.kafka.clone();
 
-    match producer::handle(&kafka_config, rx).await {
-        Ok(_) => {}
-        Err(e) => error!("producer - {}", e),
-    }
+    producer::handle(&kafka_config, rx).await;
 }
 
 async fn state_handler(state: AsyncState, cfg: Arc<AppConfig>) {
@@ -90,15 +80,14 @@ async fn state_handler(state: AsyncState, cfg: Arc<AppConfig>) {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn Error>> {
+async fn main() -> Result<()> {
     let cli = Cli::parse();
+    set_tracing(&cli)?;
 
     let cfg = Arc::new(app_config(&cli.config));
     let state_config = cfg.state.clone();
     let state = state::new_state(&state_config);
     let shutdown: Shutdown = Shutdown::default();
-
-    set_logging(&cli);
 
     // Load the state if enabled
     if state_config.enable {
@@ -115,19 +104,19 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     tokio::select! {
         _ = shutdown.shutdown_with_limit(Duration::from_secs(1)) => {
-            info!("shutdown - gracefully after shutdown signal received");
+            info!("gracefully shutdown after shutdown signal received");
         }
         _ = api_task => {
-            info!("api - handler shutdown");
+            info!("api handler shutdown");
         }
         _ = bmp_task => {
-            info!("bmp - handler shutdown");
+            info!("bmp handler shutdown");
         }
         _ = producer_task => {
-            info!("producer - handler shutdown");
+            info!("producer handler shutdown");
         }
         _ = state_task => {
-            info!("state - handler shutdown");
+            info!("state handler shutdown");
         }
     }
 

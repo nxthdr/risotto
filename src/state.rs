@@ -9,6 +9,7 @@ use std::hash::{Hash, Hasher};
 use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use tracing::{debug, info, trace};
 
 use crate::config::StateConfig;
 use crate::update::{format_update, Update};
@@ -269,11 +270,9 @@ pub async fn peer_up_withdraws_handler(
 
     tokio::time::sleep(Duration::from_secs(sleep_time as u64)).await;
 
-    log::info!(
-        "state - startup withdraws handler - {} - {} removing updates older than {}",
-        router_addr,
-        bgp_peer.peer_address,
-        startup
+    info!(
+        "startup withdraws handler - {} - {} removing updates older than {}",
+        router_addr, bgp_peer.peer_address, startup
     );
 
     let state_lock: std::sync::MutexGuard<'_, State> = state.lock().unwrap();
@@ -300,8 +299,8 @@ pub async fn peer_up_withdraws_handler(
         }
     }
 
-    log::info!(
-        "state - startup withdraws handler - {} - {} emitting {} synthetic withdraw updates",
+    info!(
+        "startup withdraws handler - {} - {} emitting {} synthetic withdraw updates",
         router_addr,
         bgp_peer.peer_address,
         synthetic_updates.len()
@@ -310,7 +309,7 @@ pub async fn peer_up_withdraws_handler(
     let mut state_lock: std::sync::MutexGuard<'_, State> = state.lock().unwrap();
     for (router_addr, peer, update) in &mut synthetic_updates {
         let update_str = format_update(*router_addr, 0, peer, update);
-        log::trace!("{:?}", update_str);
+        trace!("{:?}", update_str);
 
         // Sent to the event pipeline
         tx.send(update_str).unwrap();
@@ -325,7 +324,7 @@ pub async fn dump_handler(state: AsyncState, cfg: StateConfig) {
         // TODO do not spawn this task if state is disabled
         tokio::time::sleep(Duration::from_secs(cfg.interval)).await;
         if cfg.enable {
-            log::debug!("state - dump handler - dumping state to {}", cfg.path);
+            debug!("dump handler - dumping state to {}", cfg.path);
             dump(state.clone());
         }
     }

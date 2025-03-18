@@ -3,7 +3,7 @@ use chrono::{DateTime, MappedLocalTime, TimeZone, Utc};
 use bgpkit_parser::bmp::messages::RouteMonitoring;
 use bgpkit_parser::models::*;
 use core::net::IpAddr;
-use log::error;
+use tracing::error;
 
 pub struct UpdateHeader {
     pub timestamp: i64,
@@ -63,7 +63,7 @@ pub fn decode_updates(message: RouteMonitoring, header: UpdateHeader) -> Option<
                 MappedLocalTime::Single(dt) => dt,
                 _ => {
                     error!(
-                        "bmp - failed to parse timestamp: {}, using Utc::now()",
+                        "failed to parse timestamp: {}, using Utc::now()",
                         header.timestamp
                     );
                     Utc::now()

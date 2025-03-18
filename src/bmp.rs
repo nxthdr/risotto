@@ -6,11 +6,11 @@ use bgpkit_parser::parse_bmp_msg;
 use bgpkit_parser::parser::bmp::messages::{BmpMessage, BmpMessageBody};
 use bytes::Bytes;
 use core::net::IpAddr;
-use log::{error, info, trace};
 use std::io::{Error, ErrorKind, Result};
 use std::sync::mpsc::Sender;
 use tokio::io::AsyncReadExt;
 use tokio::net::TcpStream;
+use tracing::{error, info, trace};
 
 pub async fn unmarshal_bmp_packet(socket: &mut TcpStream) -> Result<BmpMessage> {
     // Get minimal packet length to get how many bytes to remove from the socket
@@ -78,7 +78,7 @@ async fn process_bmp_packet(
         BmpMessageBody::PeerUpNotification(body) => {
             trace!("{:?}", body);
             info!(
-                "bmp - PeerUpNotification: {} - {}",
+                "PeerUpNotification: {} - {}",
                 router_addr, peer.peer_address
             );
 
@@ -107,7 +107,7 @@ async fn process_bmp_packet(
 
             for mut update in legitimate_updates {
                 let update = format_update(router_addr, router_port, &peer, &mut update);
-                log::trace!("{:?}", update);
+                trace!("{:?}", update);
 
                 // Sent to the event pipeline
                 tx.send(update).unwrap();
@@ -116,7 +116,7 @@ async fn process_bmp_packet(
         BmpMessageBody::PeerDownNotification(body) => {
             trace!("{:?}", body);
             info!(
-                "bmp - PeerDownNotification: {} - {}",
+                "PeerDownNotification: {} - {}",
                 router_addr, peer.peer_address
             );
 
@@ -161,21 +161,15 @@ pub async fn handle(socket: &mut TcpStream, state: AsyncState, tx: Sender<String
                 // Invalid message, continue without processing
                 // From what I can see, it's often because of a packet length issue
                 // So for now, we will close the connection
-                error!("bmp - invalid BMP message: {}", e);
-                error!(
-                    "bmp - closing connection with {}:{}",
-                    router_ip, router_port
-                );
+                error!("invalid BMP message: {}", e);
+                error!("closing connection with {}:{}", router_ip, router_port);
                 break;
             }
             Err(e) => {
                 // Other errors are unexpected
                 // Close the connection
-                error!("bmp - failed to unmarshal BMP message: {}", e);
-                error!(
-                    "bmp - closing connection with {}:{}",
-                    router_ip, router_port
-                );
+                error!("failed to unmarshal BMP message: {}", e);
+                error!("closing connection with {}:{}", router_ip, router_port);
                 break;
             }
         };
