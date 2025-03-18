@@ -9,7 +9,7 @@ services:
     volumes:
       - ./config/bird/bird_10.conf:/etc/bird/bird.conf:ro
     networks:
-      testbed:
+      integration:
         ipv4_address: 10.0.0.10
     depends_on:
       - redpanda
@@ -25,7 +25,7 @@ services:
     volumes:
       - ./config/bird/bird_20.conf:/etc/bird/bird.conf:ro
     networks:
-      testbed:
+      integration:
         ipv4_address: 10.0.0.20
     depends_on:
       - redpanda
@@ -37,7 +37,7 @@ services:
     volumes:
       - ./config/redpanda/redpanda.yml:/etc/redpanda/redpanda.yaml:ro
     networks:
-      testbed:
+      integration:
         ipv4_address: 10.0.0.100
 
   clickhouse:
@@ -45,7 +45,7 @@ services:
     volumes:
       - ./config/clickhouse/docker-entrypoint-initdb.d:/docker-entrypoint-initdb.d
     networks:
-      testbed:
+      integration:
         ipv4_address: 10.0.0.200
     depends_on:
       - redpanda
@@ -58,14 +58,14 @@ services:
     ports:
       - "3000:3000"
     networks:
-      testbed:
+      integration:
         ipv4_address: 10.0.0.99
     depends_on:
       - redpanda
       - clickhouse
 
 networks:
-  testbed:
+  integration:
     driver: bridge
     enable_ipv6: true
     ipam:
