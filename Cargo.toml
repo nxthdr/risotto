@@ -1,7 +1,19 @@
 [package]
 name = "risotto"
 version = "0.1.0"
+license = "MIT"
+readme = "README.md"
+description = "High performance BMP collector"
+repository = "https://github.com/nxthdr/risotto"
+homepage = "https://nxthdr.dev"
+keywords = ["BGP", "BMP", "collector"]
 edition = "2021"
+exclude = [
+    ".github/*",
+    "integration/*",
+    "logo/*",
+    "renovate.json",
+]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
