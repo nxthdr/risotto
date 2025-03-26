@@ -13,6 +13,5 @@ keywords = ["BGP", "BMP", "collector"]
 exclude = [
      ".github/*",
      "integration/*",
-     "logo/*",
      "renovate.json",
  ]

@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="logo/logo.png" height="256" width="256" alt="Project Logo" />
+  <img src="https://nxthdr.dev/risotto/logo.png" height="256" width="256" alt="Project Logo" />
 </p>
 
 # Risotto
