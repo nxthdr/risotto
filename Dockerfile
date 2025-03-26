@@ -4,7 +4,7 @@ WORKDIR /app
 
 COPY . .
 
-RUN cargo install --path .
+RUN cargo install --path ./risotto
 
 FROM debian:stable-slim
 

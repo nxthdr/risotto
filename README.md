@@ -4,7 +4,9 @@
 
 # Risotto
 
-Risotto 😋 is a BGP updates collector that gathers BGP updates from routers via BMP and streams them into an events pipeline, such as Apache Kafka or Redpanda.
+Risotto 😋 is a BGP updates collector that gathers BGP updates from routers via the BMP protocol. This repository contains the Risotto collector application and the Risotto library.
+
+The application streams the BGP updates to a Kafka topic, which can be consumed by other components downstream. The library provides all the necessary components to decode BMP messages and produce BGP updates.
 
 ## State Management
 
@@ -67,4 +69,4 @@ curl -s http://localhost:3000
 
 ## Contributing
 
-Refer to the Docker Compose [testbed](./testbed/) to try Risotto locally. The setup includes two [Bird](https://bird.network.cz/) routers that connect to Risotto, sharing updates announced between them.
+Refer to the Docker Compose [integration](./integration/) tests to try Risotto locally. The setup includes two [Bird](https://bird.network.cz/) routers that connect to Risotto, sharing updates announced between them.

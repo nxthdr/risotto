@@ -9,50 +9,26 @@ use std::hash::{Hash, Hasher};
 use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use tracing::{debug, info, trace};
+use tokio::time::sleep;
+use tracing::{info, trace};
 
-use crate::config::StateConfig;
 use crate::update::{format_update, Update};
 
 pub type AsyncState = Arc<Mutex<State>>;
+pub type RouterPeerUpdate = (IpAddr, IpAddr, TimedPrefix);
 
-type RouterPeerUpdate = (IpAddr, IpAddr, TimedPrefix);
-
-pub fn new_state(state_config: &StateConfig) -> AsyncState {
-    Arc::new(Mutex::new(State::new(state_config)))
-}
-pub fn dump(state: AsyncState) {
-    let state = state.lock().unwrap();
-    let temp_path = format!("{}.tmp", state.config.path);
-    let file = std::fs::File::create(&temp_path).unwrap();
-    let mut writer = std::io::BufWriter::new(file);
-    serde_json::to_writer(&mut writer, &state.store).unwrap();
-    std::fs::rename(temp_path, state.config.path.clone()).unwrap();
-}
-
-pub fn load(state: AsyncState) {
-    let mut state = state.lock().unwrap();
-
-    let file = match std::fs::File::open(state.config.path.clone()) {
-        Ok(file) => file,
-        Err(_) => return,
-    };
-
-    let reader = std::io::BufReader::new(file);
-    let store: MemoryStore = serde_json::from_reader(reader).unwrap();
-    state.store = store;
+pub fn new_state() -> AsyncState {
+    Arc::new(Mutex::new(State::new()))
 }
 
 pub struct State {
-    store: MemoryStore,
-    config: StateConfig,
+    pub store: MemoryStore,
 }
 
 impl State {
-    pub fn new(state_config: &StateConfig) -> State {
+    pub fn new() -> State {
         State {
             store: MemoryStore::new(),
-            config: state_config.clone(),
         }
     }
 
@@ -76,10 +52,6 @@ impl State {
         router_addr: &IpAddr,
         peer: &BGPkitPeer,
     ) -> Result<(), Box<dyn Error>> {
-        if !self.config.enable {
-            return Ok(());
-        }
-
         self.store.remove_peer(router_addr, peer);
         Ok(())
     }
@@ -91,10 +63,6 @@ impl State {
         peer: &BGPkitPeer,
         update: &Update,
     ) -> Result<bool, Box<dyn Error>> {
-        if !self.config.enable {
-            // If the state is disabled, all updates are emited
-            return Ok(true);
-        }
         let emit = self.store.update(router_addr, peer, update);
         Ok(emit)
     }
@@ -125,7 +93,7 @@ impl Hash for TimedPrefix {
 }
 
 #[derive(Serialize, Deserialize)]
-struct MemoryStore {
+pub struct MemoryStore {
     routers: HashMap<IpAddr, Router>,
 }
 
@@ -258,6 +226,7 @@ pub fn synthesize_withdraw_update(prefix: TimedPrefix) -> Update {
 pub async fn peer_up_withdraws_handler(
     state: AsyncState,
     router_addr: IpAddr,
+    router_port: u16,
     bgp_peer: BGPkitPeer,
     tx: Sender<String>,
 ) {
@@ -268,11 +237,11 @@ pub async fn peer_up_withdraws_handler(
     };
     let sleep_time = 300 + random; // 5 minutes +/- 1 minute
 
-    tokio::time::sleep(Duration::from_secs(sleep_time as u64)).await;
+    sleep(Duration::from_secs(sleep_time as u64)).await;
 
     info!(
-        "startup withdraws handler - {} - {} removing updates older than {}",
-        router_addr, bgp_peer.peer_address, startup
+        "startup withdraws handler - {}:{} - {} removing updates older than {}",
+        router_addr, router_port, bgp_peer.peer_address, startup
     );
 
     let state_lock: std::sync::MutexGuard<'_, State> = state.lock().unwrap();
@@ -316,16 +285,5 @@ pub async fn peer_up_withdraws_handler(
 
         // Remove the update from the state
         state_lock.store.update(router_addr, peer, update);
-    }
-}
-
-pub async fn dump_handler(state: AsyncState, cfg: StateConfig) {
-    loop {
-        // TODO do not spawn this task if state is disabled
-        tokio::time::sleep(Duration::from_secs(cfg.interval)).await;
-        if cfg.enable {
-            debug!("dump handler - dumping state to {}", cfg.path);
-            dump(state.clone());
-        }
     }
 }

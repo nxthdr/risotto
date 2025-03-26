@@ -1,7 +1,6 @@
-use chrono::{DateTime, MappedLocalTime, TimeZone, Utc};
-
 use bgpkit_parser::bmp::messages::RouteMonitoring;
 use bgpkit_parser::models::*;
+use chrono::{DateTime, MappedLocalTime, TimeZone, Utc};
 use core::net::IpAddr;
 use tracing::error;
 
