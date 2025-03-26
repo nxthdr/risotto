@@ -4,7 +4,7 @@ use metrics::{Key, Label, Recorder};
 use metrics_exporter_prometheus::PrometheusBuilder;
 use serde::{Deserialize, Serialize};
 
-use crate::state::AsyncState;
+use risotto_lib::state::AsyncState;
 
 static METADATA: metrics::Metadata =
     metrics::Metadata::new(module_path!(), metrics::Level::INFO, Some(module_path!()));
@@ -24,10 +24,10 @@ struct APIPeer {
 
 #[derive(Clone)]
 struct AppState {
-    state: AsyncState,
+    state: Option<AsyncState>,
 }
 
-pub fn app(state: AsyncState) -> Router {
+pub fn app(state: Option<AsyncState>) -> Router {
     let app_state = AppState {
         state: state.clone(),
     };
@@ -97,11 +97,25 @@ async fn format(state: AsyncState) -> Vec<APIRouter> {
 }
 
 async fn root(AxumState(AppState { state, .. }): AxumState<AppState>) -> Json<Vec<APIRouter>> {
-    let api_routers = format(state).await;
-    Json(api_routers)
+    match state {
+        Some(state) => {
+            let api_routers = format(state).await;
+            Json(api_routers)
+        }
+        None => {
+            // TODO: return an HTTP error instead
+            return Json(Vec::new());
+        }
+    }
 }
 
 async fn metrics(AxumState(AppState { state }): AxumState<AppState>) -> String {
+    if state.is_none() {
+        return String::new();
+    }
+
+    let state = state.unwrap();
+
     let recorder = PrometheusBuilder::new().build_recorder();
     let api_routers = format(state).await;
 

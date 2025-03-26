@@ -3,7 +3,6 @@ mod bmp;
 mod config;
 mod producer;
 mod state;
-mod update;
 
 use anyhow::Result;
 use clap::Parser;
@@ -16,8 +15,10 @@ use tokio::net::TcpListener;
 use tokio_graceful::Shutdown;
 use tracing::{debug, info};
 
+use risotto_lib::state::new_state;
+use risotto_lib::state::AsyncState;
+
 use crate::config::app_config;
-use crate::state::AsyncState;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -40,7 +41,7 @@ fn set_tracing(cli: &Cli) -> Result<()> {
     Ok(())
 }
 
-async fn api_handler(state: AsyncState, cfg: Arc<AppConfig>) {
+async fn api_handler(state: Option<AsyncState>, cfg: Arc<AppConfig>) {
     let api_config = cfg.api.clone();
     debug!("binding api listener to {}", api_config.host);
     let api_listener = TcpListener::bind(api_config.host).await.unwrap();
@@ -49,7 +50,7 @@ async fn api_handler(state: AsyncState, cfg: Arc<AppConfig>) {
     axum::serve(api_listener, app).await.unwrap();
 }
 
-async fn bmp_handler(state: AsyncState, cfg: Arc<AppConfig>, tx: Sender<String>) {
+async fn bmp_handler(state: Option<AsyncState>, cfg: Arc<AppConfig>, tx: Sender<String>) {
     let bmp_config = cfg.bmp.clone();
 
     debug!("binding bmp listener to {}", bmp_config.host);
@@ -73,10 +74,9 @@ async fn producer_handler(cfg: Arc<AppConfig>, rx: Receiver<String>) {
     producer::handle(&kafka_config, rx).await;
 }
 
-async fn state_handler(state: AsyncState, cfg: Arc<AppConfig>) {
-    let cfg = cfg.state.clone();
-
-    state::dump_handler(state.clone(), cfg.clone()).await;
+async fn state_handler(state: Option<AsyncState>, cfg: Arc<AppConfig>) {
+    let state_config = cfg.state.clone();
+    state::dump_handler(state.clone(), state_config).await;
 }
 
 #[tokio::main]
@@ -86,13 +86,21 @@ async fn main() -> Result<()> {
 
     let cfg = Arc::new(app_config(&cli.config));
     let state_config = cfg.state.clone();
-    let state = state::new_state(&state_config);
     let shutdown: Shutdown = Shutdown::default();
 
-    // Load the state if enabled
-    if state_config.enable {
-        state::load(state.clone());
-    }
+    // Load state if enabled
+    let state = match state_config.enable {
+        true => {
+            debug!("state is enabled");
+            let state = new_state();
+            state::load(state.clone(), state_config.clone());
+            Some(state)
+        }
+        false => {
+            debug!("state is disabled");
+            None
+        }
+    };
 
     // MPSC channel to communicate between BMP tasks and producer task
     let (tx, rx) = channel();
