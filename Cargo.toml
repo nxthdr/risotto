@@ -10,3 +10,9 @@ description = "High performance BMP collector"
 repository = "https://github.com/nxthdr/risotto"
 homepage = "https://nxthdr.dev"
 keywords = ["BGP", "BMP", "collector"]
+exclude = [
+     ".github/*",
+     "integration/*",
+     "logo/*",
+     "renovate.json",
+ ]

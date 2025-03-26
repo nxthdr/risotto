@@ -2,6 +2,15 @@
 name = "risotto-lib"
 edition = "2021"
 
+version.workspace = true
+license.workspace = true
+readme.workspace = true
+description.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+exclude.workspace = true
+
 [dependencies]
 anyhow = "1.0.95"
 chrono = "0.4.39"

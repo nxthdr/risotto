@@ -2,7 +2,14 @@
 name = "risotto"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+version.workspace = true
+license.workspace = true
+readme.workspace = true
+description.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+exclude.workspace = true
 
 [dependencies]
 anyhow = "1.0.95"
