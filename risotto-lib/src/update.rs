@@ -155,16 +155,16 @@ pub fn new_peer_from_metadata(metadata: UpdateMetadata) -> Peer {
 pub fn new_path(path: Option<AsPath>) -> Vec<u32> {
     match path {
         Some(mut path) => {
-            let mut contructed_path: Vec<u32> = Vec::new();
+            let mut constructed_path: Vec<u32> = Vec::new();
             path.coalesce();
             for segment in path.into_segments_iter() {
                 if let AsPathSegment::AsSequence(dedup_asns) = segment {
                     for asn in dedup_asns {
-                        contructed_path.push(asn.to_u32());
+                        constructed_path.push(asn.to_u32());
                     }
                 }
             }
-            contructed_path
+            constructed_path
         }
         None => Vec::new(),
     }

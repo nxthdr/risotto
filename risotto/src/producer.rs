@@ -7,7 +7,7 @@ use std::time::Duration;
 use tracing::{debug, error, info, trace};
 
 use crate::config::KafkaConfig;
-use crate::formatter::format_update;
+use crate::formatter::format_update_to_csv;
 
 #[derive(Clone)]
 pub struct SaslAuth {
@@ -93,7 +93,7 @@ pub async fn handle(config: &KafkaConfig, rx: Receiver<Update>) {
             trace!("received  {:?}", message);
 
             // Format the update
-            let message = format_update(&message);
+            let message = format_update_to_csv(&message);
 
             // Max message size is 1048576 bytes (including headers)
             if final_message.len() + message.len() + 1 > config.message_max_bytes {

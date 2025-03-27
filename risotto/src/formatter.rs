@@ -2,7 +2,7 @@ use risotto_lib::update::Update;
 
 // Returns a CSV line corresponding to this schema
 // timestamp,router_addr,router_port,peer_addr,peer_bgp_id,peer_asn,prefix_addr,prefix_len,announced,is_post_policy,is_adj_rib_out,origin,path,communities,synthetic
-pub fn format_update(update: &Update) -> String {
+pub fn format_update_to_csv(update: &Update) -> String {
     let as_path_str = update
         .path
         .clone()
