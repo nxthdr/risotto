@@ -1,4 +1,4 @@
-use bgpkit_parser::models::{NetworkPrefix, Origin, Peer as BGPkitPeer};
+use bgpkit_parser::models::{Origin, Peer as BGPkitPeer};
 use chrono::Utc;
 use core::net::IpAddr;
 use rand::Rng;
@@ -12,7 +12,7 @@ use std::time::Duration;
 use tokio::time::sleep;
 use tracing::{info, trace};
 
-use crate::update::{format_update, Update};
+use crate::update::{Update, UpdateMetadata};
 
 pub type AsyncState = Arc<Mutex<State>>;
 pub type RouterPeerUpdate = (IpAddr, IpAddr, TimedPrefix);
@@ -63,14 +63,14 @@ impl State {
         peer: &BGPkitPeer,
         update: &Update,
     ) -> Result<bool, Box<dyn Error>> {
-        let emit = self.store.update(router_addr, peer, update);
-        Ok(emit)
+        Ok(self.store.update(router_addr, &peer, update))
     }
 }
 
 #[derive(Serialize, Deserialize, Eq, Clone)]
 pub struct TimedPrefix {
-    pub prefix: NetworkPrefix,
+    pub prefix_addr: IpAddr,
+    pub prefix_len: u8,
     pub is_post_policy: bool,
     pub is_adj_rib_out: bool,
     pub timestamp: i64,
@@ -78,7 +78,8 @@ pub struct TimedPrefix {
 
 impl PartialEq for TimedPrefix {
     fn eq(&self, other: &Self) -> bool {
-        self.prefix == other.prefix
+        self.prefix_addr == other.prefix_addr
+            && self.prefix_len == other.prefix_len
             && self.is_post_policy == other.is_post_policy
             && self.is_adj_rib_out == other.is_adj_rib_out
     }
@@ -86,7 +87,8 @@ impl PartialEq for TimedPrefix {
 
 impl Hash for TimedPrefix {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.prefix.hash(state);
+        self.prefix_addr.hash(state);
+        self.prefix_len.hash(state);
         self.is_post_policy.hash(state);
         self.is_adj_rib_out.hash(state);
     }
@@ -188,7 +190,8 @@ impl Router {
 
         let now: i64 = chrono::Utc::now().timestamp_millis();
         let timed_prefix = TimedPrefix {
-            prefix: update.prefix,
+            prefix_addr: update.prefix_addr,
+            prefix_len: update.prefix_len,
             is_post_policy: update.is_post_policy,
             is_adj_rib_out: update.is_adj_rib_out,
             timestamp: now,
@@ -209,26 +212,30 @@ impl Router {
     }
 }
 
-pub fn synthesize_withdraw_update(prefix: TimedPrefix) -> Update {
+pub fn synthesize_withdraw_update(prefix: TimedPrefix, metadata: UpdateMetadata) -> Update {
     Update {
-        prefix: prefix.prefix,
+        timestamp: Utc::now(),
+        router_addr: metadata.router_addr,
+        router_port: metadata.router_port,
+        peer_addr: metadata.peer_addr,
+        peer_bgp_id: metadata.peer_bgp_id,
+        peer_asn: metadata.peer_asn,
+        prefix_addr: prefix.prefix_addr,
+        prefix_len: prefix.prefix_len,
         announced: false,
         origin: Origin::INCOMPLETE,
-        path: None,
+        path: vec![],
         communities: vec![],
         is_post_policy: prefix.is_post_policy,
         is_adj_rib_out: prefix.is_adj_rib_out,
-        timestamp: Utc::now(),
         synthetic: true,
     }
 }
 
 pub async fn peer_up_withdraws_handler(
     state: AsyncState,
-    router_addr: IpAddr,
-    router_port: u16,
-    bgp_peer: BGPkitPeer,
-    tx: Sender<String>,
+    tx: Sender<Update>,
+    metadata: UpdateMetadata,
 ) {
     let startup = chrono::Utc::now();
     let random = {
@@ -241,13 +248,13 @@ pub async fn peer_up_withdraws_handler(
 
     info!(
         "startup withdraws handler - {}:{} - {} removing updates older than {}",
-        router_addr, router_port, bgp_peer.peer_address, startup
+        metadata.router_addr, metadata.router_port, metadata.peer_addr, startup
     );
 
     let state_lock: std::sync::MutexGuard<'_, State> = state.lock().unwrap();
     let peer = match state_lock
         .store
-        .get_peer(&router_addr, &bgp_peer.peer_address)
+        .get_peer(&metadata.router_addr, &metadata.peer_addr)
     {
         Some(peer) => peer,
         None => return,
@@ -258,32 +265,29 @@ pub async fn peer_up_withdraws_handler(
     let mut synthetic_updates = Vec::new();
     for update in peer.updates {
         if update.timestamp < startup.timestamp_millis() {
-            // This update has been re-announced after startup
+            // This update has not been re-announced after startup
             // Emit a synthetic withdraw update
-            synthetic_updates.push((
-                router_addr,
-                peer.details,
-                synthesize_withdraw_update(update.clone()),
-            ));
+            synthetic_updates.push(synthesize_withdraw_update(update.clone(), metadata.clone()));
         }
     }
 
     info!(
         "startup withdraws handler - {} - {} emitting {} synthetic withdraw updates",
-        router_addr,
-        bgp_peer.peer_address,
+        metadata.router_addr,
+        peer.details.peer_address,
         synthetic_updates.len()
     );
 
     let mut state_lock: std::sync::MutexGuard<'_, State> = state.lock().unwrap();
-    for (router_addr, peer, update) in &mut synthetic_updates {
-        let update_str = format_update(*router_addr, 0, peer, update);
-        trace!("{:?}", update_str);
+    for update in &mut synthetic_updates {
+        trace!("{:?}", update);
 
         // Sent to the event pipeline
-        tx.send(update_str).unwrap();
+        tx.send(update.clone()).unwrap();
 
         // Remove the update from the state
-        state_lock.store.update(router_addr, peer, update);
+        state_lock
+            .store
+            .update(&update.router_addr, &peer.details, update);
     }
 }

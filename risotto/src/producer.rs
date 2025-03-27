@@ -1,11 +1,13 @@
 use rdkafka::config::ClientConfig;
 use rdkafka::message::OwnedHeaders;
 use rdkafka::producer::{FutureProducer, FutureRecord};
+use risotto_lib::update::Update;
 use std::sync::mpsc::Receiver;
 use std::time::Duration;
 use tracing::{debug, error, info, trace};
 
 use crate::config::KafkaConfig;
+use crate::formatter::format_update_to_csv;
 
 #[derive(Clone)]
 pub struct SaslAuth {
@@ -20,7 +22,7 @@ pub enum KafkaAuth {
     PlainText,
 }
 
-pub async fn handle(config: &KafkaConfig, rx: Receiver<String>) {
+pub async fn handle(config: &KafkaConfig, rx: Receiver<Update>) {
     // Configure Kafka authentication
     let kafka_auth = match config.auth_protocol.as_str() {
         "PLAINTEXT" => KafkaAuth::PlainText,
@@ -88,7 +90,10 @@ pub async fn handle(config: &KafkaConfig, rx: Receiver<String>) {
             }
 
             let message = message.unwrap();
-            trace!("received  {}", message);
+            trace!("received  {:?}", message);
+
+            // Format the update
+            let message = format_update_to_csv(&message);
 
             // Max message size is 1048576 bytes (including headers)
             if final_message.len() + message.len() + 1 > config.message_max_bytes {
