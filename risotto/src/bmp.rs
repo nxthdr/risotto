@@ -1,4 +1,5 @@
 use bytes::Bytes;
+use risotto_lib::update::Update;
 use std::io::{Error, ErrorKind, Result};
 use std::sync::mpsc::Sender;
 use tokio::io::AsyncReadExt;
@@ -35,7 +36,7 @@ pub async fn unmarshal_bmp_packet(socket: &mut TcpStream) -> Result<Bytes> {
     Ok(Bytes::copy_from_slice(&buf))
 }
 
-pub async fn handle(socket: &mut TcpStream, state: Option<AsyncState>, tx: Sender<String>) {
+pub async fn handle(socket: &mut TcpStream, state: Option<AsyncState>, tx: Sender<Update>) {
     // Get router IP information
     let socket_info = socket.peer_addr().unwrap();
     let router_ip = socket_info.ip();

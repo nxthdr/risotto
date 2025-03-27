@@ -1,29 +1,42 @@
-use bgpkit_parser::bmp::messages::RouteMonitoring;
+use bgpkit_parser::bmp::messages::{BmpMessage, PerPeerFlags, RouteMonitoring};
 use bgpkit_parser::models::*;
 use chrono::{DateTime, MappedLocalTime, TimeZone, Utc};
 use core::net::IpAddr;
+use std::net::Ipv4Addr;
 use tracing::error;
 
-pub struct UpdateHeader {
+#[derive(Debug, Clone, PartialEq)]
+pub struct UpdateMetadata {
     pub timestamp: i64,
+    pub router_addr: IpAddr,
+    pub router_port: u16,
+    pub peer_addr: IpAddr,
+    pub peer_bgp_id: Ipv4Addr,
+    pub peer_asn: u32,
     pub is_post_policy: bool,
     pub is_adj_rib_out: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Update {
-    pub prefix: NetworkPrefix,
+    pub timestamp: DateTime<Utc>,
+    pub router_addr: IpAddr,
+    pub router_port: u16,
+    pub peer_addr: IpAddr,
+    pub peer_bgp_id: Ipv4Addr,
+    pub peer_asn: u32,
+    pub prefix_addr: IpAddr,
+    pub prefix_len: u8,
     pub announced: bool,
-    pub origin: Origin,
-    pub path: Option<AsPath>,
-    pub communities: Vec<MetaCommunity>,
     pub is_post_policy: bool,
     pub is_adj_rib_out: bool,
-    pub timestamp: DateTime<Utc>,
+    pub origin: Origin,
+    pub path: Vec<u32>,
+    pub communities: Vec<(u32, u16)>,
     pub synthetic: bool,
 }
 
-pub fn decode_updates(message: RouteMonitoring, header: UpdateHeader) -> Option<Vec<Update>> {
+pub fn decode_updates(message: RouteMonitoring, metadata: UpdateMetadata) -> Option<Vec<Update>> {
     let mut updates = Vec::new();
 
     match message.bgp_message {
@@ -58,12 +71,12 @@ pub fn decode_updates(message: RouteMonitoring, header: UpdateHeader) -> Option<
             };
             let communities: Vec<MetaCommunity> = attributes.iter_communities().collect();
 
-            let timestamp = match Utc.timestamp_millis_opt(header.timestamp) {
+            let timestamp = match Utc.timestamp_millis_opt(metadata.timestamp) {
                 MappedLocalTime::Single(dt) => dt,
                 _ => {
                     error!(
                         "failed to parse timestamp: {}, using Utc::now()",
-                        header.timestamp
+                        metadata.timestamp
                     );
                     Utc::now()
                 }
@@ -71,14 +84,20 @@ pub fn decode_updates(message: RouteMonitoring, header: UpdateHeader) -> Option<
 
             for (prefix, announced) in prefixes_to_update {
                 updates.push(Update {
-                    prefix,
-                    announced,
-                    origin,
-                    path: path.clone(),
-                    communities: communities.clone(),
-                    is_post_policy: header.is_post_policy,
-                    is_adj_rib_out: header.is_adj_rib_out,
                     timestamp,
+                    router_addr: metadata.router_addr,
+                    router_port: metadata.router_port,
+                    peer_addr: metadata.peer_addr,
+                    peer_bgp_id: metadata.peer_bgp_id,
+                    peer_asn: metadata.peer_asn,
+                    prefix_addr: map_to_ipv6(prefix.prefix.addr()),
+                    prefix_len: prefix.prefix.prefix_len(),
+                    announced,
+                    is_post_policy: metadata.is_post_policy,
+                    is_adj_rib_out: metadata.is_adj_rib_out,
+                    origin,
+                    path: new_path(path.clone()),
+                    communities: new_communities(&communities.clone()),
                     synthetic: false,
                 });
             }
@@ -89,7 +108,51 @@ pub fn decode_updates(message: RouteMonitoring, header: UpdateHeader) -> Option<
     }
 }
 
-pub fn construct_as_path(path: Option<AsPath>) -> Vec<u32> {
+pub fn new_metadata(
+    router_addr: IpAddr,
+    router_port: u16,
+    message: BmpMessage,
+) -> Option<UpdateMetadata> {
+    // Get peer information
+    let Some(pph) = message.per_peer_header else {
+        return None;
+    };
+    let peer = Peer::new(pph.peer_bgp_id, pph.peer_ip, pph.peer_asn);
+
+    // Get header information
+    let timestamp = (pph.timestamp * 1000.0) as i64;
+
+    let is_post_policy = match pph.peer_flags {
+        PerPeerFlags::PeerFlags(flags) => flags.is_post_policy(),
+        PerPeerFlags::LocalRibPeerFlags(_) => false,
+    };
+
+    let is_adj_rib_out = match pph.peer_flags {
+        PerPeerFlags::PeerFlags(flags) => flags.is_adj_rib_out(),
+        PerPeerFlags::LocalRibPeerFlags(_) => false,
+    };
+
+    Some(UpdateMetadata {
+        timestamp,
+        router_addr,
+        router_port,
+        peer_addr: map_to_ipv6(peer.peer_address),
+        peer_bgp_id: peer.peer_bgp_id,
+        peer_asn: peer.peer_asn.to_u32(),
+        is_post_policy,
+        is_adj_rib_out,
+    })
+}
+
+pub fn new_peer_from_metadata(metadata: UpdateMetadata) -> Peer {
+    Peer::new(
+        metadata.peer_bgp_id,
+        metadata.peer_addr,
+        Asn::new_32bit(metadata.peer_asn),
+    )
+}
+
+pub fn new_path(path: Option<AsPath>) -> Vec<u32> {
     match path {
         Some(mut path) => {
             let mut contructed_path: Vec<u32> = Vec::new();
@@ -107,7 +170,7 @@ pub fn construct_as_path(path: Option<AsPath>) -> Vec<u32> {
     }
 }
 
-pub fn construct_communities(communities: &[MetaCommunity]) -> Vec<(u32, u16)> {
+pub fn new_communities(communities: &[MetaCommunity]) -> Vec<(u32, u16)> {
     let mut constructed_communities = Vec::new();
     for community in communities {
         match community {
@@ -129,46 +192,4 @@ fn map_to_ipv6(ip: IpAddr) -> IpAddr {
     } else {
         ip
     }
-}
-
-// Returns a CSV line corresponding to this schema
-// timestamp,router_addr,router_port,peer_addr,peer_bgp_id,peer_asn,prefix_addr,prefix_len,announced,is_post_policy,is_adj_rib_out,origin,path,communities,synthetic
-pub fn format_update(
-    router_addr: IpAddr,
-    router_port: u16,
-    peer: &Peer,
-    update: &mut Update,
-) -> String {
-    let as_path_str = construct_as_path(update.path.clone())
-        .iter()
-        .map(|x| x.to_string())
-        .collect::<Vec<String>>()
-        .join(",");
-    let as_path_str = format!("\"[{}]\"", as_path_str);
-
-    let communities_str = construct_communities(update.communities.as_ref())
-        .iter()
-        .map(|x| format!("({},{})", x.0, x.1))
-        .collect::<Vec<String>>()
-        .join(",");
-    let communities_str = format!("\"[{}]\"", communities_str);
-
-    let mut row: Vec<String> = Vec::new();
-    row.push(format!("{}", update.timestamp.timestamp_millis()));
-    row.push(format!("{}", map_to_ipv6(router_addr)));
-    row.push(format!("{}", router_port));
-    row.push(format!("{}", map_to_ipv6(peer.peer_address)));
-    row.push(format!("{}", peer.peer_bgp_id));
-    row.push(format!("{}", peer.peer_asn));
-    row.push(format!("{}", map_to_ipv6(update.prefix.prefix.addr())));
-    row.push(format!("{}", update.prefix.prefix.prefix_len()));
-    row.push(format!("{}", update.is_post_policy));
-    row.push(format!("{}", update.is_adj_rib_out));
-    row.push(format!("{}", update.announced));
-    row.push(format!("{}", update.origin));
-    row.push(format!("{}", as_path_str));
-    row.push(format!("{}", communities_str));
-    row.push(format!("{}", update.synthetic));
-
-    row.join(",")
 }

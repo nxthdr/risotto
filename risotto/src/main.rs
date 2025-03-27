@@ -1,6 +1,7 @@
 mod api;
 mod bmp;
 mod config;
+mod formatter;
 mod producer;
 mod state;
 
@@ -8,6 +9,7 @@ use anyhow::Result;
 use clap::Parser;
 use clap_verbosity_flag::{InfoLevel, Verbosity};
 use config::AppConfig;
+use risotto_lib::update::Update;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::Arc;
 use std::time::Duration;
@@ -50,7 +52,7 @@ async fn api_handler(state: Option<AsyncState>, cfg: Arc<AppConfig>) {
     axum::serve(api_listener, app).await.unwrap();
 }
 
-async fn bmp_handler(state: Option<AsyncState>, cfg: Arc<AppConfig>, tx: Sender<String>) {
+async fn bmp_handler(state: Option<AsyncState>, cfg: Arc<AppConfig>, tx: Sender<Update>) {
     let bmp_config = cfg.bmp.clone();
 
     debug!("binding bmp listener to {}", bmp_config.host);
@@ -68,7 +70,7 @@ async fn bmp_handler(state: Option<AsyncState>, cfg: Arc<AppConfig>, tx: Sender<
     }
 }
 
-async fn producer_handler(cfg: Arc<AppConfig>, rx: Receiver<String>) {
+async fn producer_handler(cfg: Arc<AppConfig>, rx: Receiver<Update>) {
     let kafka_config = cfg.kafka.clone();
 
     producer::handle(&kafka_config, rx).await;

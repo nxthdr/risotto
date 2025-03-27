@@ -87,7 +87,7 @@ async fn format(state: AsyncState) -> Vec<APIRouter> {
             }
         };
 
-        if update_prefix.prefix.prefix.addr().is_ipv4() {
+        if update_prefix.prefix_addr.is_ipv4() {
             peer.ipv4 += 1;
         } else {
             peer.ipv6 += 1;

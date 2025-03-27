@@ -1,6 +1,5 @@
 use anyhow::Result;
-use bgpkit_parser::bmp::messages::{PerPeerFlags, RouteMonitoring};
-use bgpkit_parser::models::Peer;
+use bgpkit_parser::bmp::messages::{PeerDownNotification, PeerUpNotification, RouteMonitoring};
 use bgpkit_parser::parse_bmp_msg;
 use bgpkit_parser::parser::bmp::messages::{BmpMessage, BmpMessageBody};
 use bytes::Bytes;
@@ -10,7 +9,7 @@ use tracing::{error, info, trace};
 
 use crate::state::AsyncState;
 use crate::state::{peer_up_withdraws_handler, synthesize_withdraw_update};
-use crate::update::{decode_updates, format_update, UpdateHeader};
+use crate::update::{decode_updates, new_metadata, new_peer_from_metadata, Update, UpdateMetadata};
 
 pub fn decode_bmp_message(bytes: &mut Bytes) -> Result<BmpMessage> {
     let message = match parse_bmp_msg(bytes) {
@@ -23,35 +22,34 @@ pub fn decode_bmp_message(bytes: &mut Bytes) -> Result<BmpMessage> {
 
 pub async fn process_peer_up_notification(
     state: Option<AsyncState>,
-    tx: Sender<String>,
-    router_addr: IpAddr,
-    router_port: u16,
-    peer: Peer,
+    tx: Sender<Update>,
+    metadata: UpdateMetadata,
+    _: PeerUpNotification,
 ) {
     if let Some(spawn_state) = state {
         let spawn_state = spawn_state.clone();
         tokio::spawn(async move {
-            peer_up_withdraws_handler(spawn_state, router_addr, router_port, peer, tx).await;
+            peer_up_withdraws_handler(spawn_state, tx, metadata).await;
         });
     }
 }
 
 pub async fn process_route_monitoring(
     state: Option<AsyncState>,
-    tx: Sender<String>,
-    router_addr: IpAddr,
-    router_port: u16,
-    peer: Peer,
-    header: UpdateHeader,
+    tx: Sender<Update>,
+    metadata: UpdateMetadata,
     body: RouteMonitoring,
 ) {
-    let potential_updates = decode_updates(body, header).unwrap_or_default();
+    let potential_updates = decode_updates(body, metadata.clone()).unwrap_or_default();
 
     let mut legitimate_updates = Vec::new();
     if let Some(state) = &state {
+        let peer = new_peer_from_metadata(metadata.clone());
         let mut state_lock = state.lock().unwrap();
         for update in potential_updates {
-            let is_updated = state_lock.update(&router_addr, &peer, &update).unwrap();
+            let is_updated = state_lock
+                .update(&metadata.router_addr.clone(), &peer, &update)
+                .unwrap();
             if is_updated {
                 legitimate_updates.push(update);
             }
@@ -60,8 +58,7 @@ pub async fn process_route_monitoring(
         legitimate_updates = potential_updates;
     }
 
-    for mut update in legitimate_updates {
-        let update = format_update(router_addr, router_port, &peer, &mut update);
+    for update in legitimate_updates {
         trace!("{:?}", update);
 
         // Sent to the event pipeline
@@ -71,27 +68,31 @@ pub async fn process_route_monitoring(
 
 pub async fn process_peer_down_notification(
     state: Option<AsyncState>,
-    tx: Sender<String>,
-    router_addr: IpAddr,
-    router_port: u16,
-    peer: Peer,
+    tx: Sender<Update>,
+    metadata: UpdateMetadata,
+    _: PeerDownNotification,
 ) {
     if let Some(state) = state {
-        let mut state_lock = state.lock().unwrap();
-
         // Remove the peer and the associated updates from the state
         // We start by emiting synthetic withdraw updates
+
+        let peer = new_peer_from_metadata(metadata.clone());
+        let mut state_lock = state.lock().unwrap();
+
         let mut synthetic_updates = Vec::new();
-        let updates = state_lock.get_updates_by_peer(&router_addr, &peer).unwrap();
+        let updates = state_lock
+            .get_updates_by_peer(&metadata.router_addr, &peer)
+            .unwrap();
         for prefix in updates {
-            synthetic_updates.push(synthesize_withdraw_update(prefix.clone()));
+            synthetic_updates.push(synthesize_withdraw_update(prefix.clone(), metadata.clone()));
         }
 
         // Then update the state
-        state_lock.remove_updates(&router_addr, &peer).unwrap();
+        state_lock
+            .remove_updates(&metadata.router_addr, &peer)
+            .unwrap();
 
-        for mut update in synthetic_updates {
-            let update = format_update(router_addr, router_port, &peer, &mut update);
+        for update in synthetic_updates {
             trace!("{:?}", update);
 
             // Send the synthetic updates to the event pipeline
@@ -102,7 +103,7 @@ pub async fn process_peer_down_notification(
 
 pub async fn process_bmp_message(
     state: Option<AsyncState>,
-    tx: Sender<String>,
+    tx: Sender<Update>,
     router_addr: IpAddr,
     router_port: u16,
     bytes: &mut Bytes,
@@ -116,55 +117,61 @@ pub async fn process_bmp_message(
         }
     };
 
-    // Get peer information
-    let Some(pph) = message.per_peer_header else {
-        return;
-    };
-    let peer = Peer::new(pph.peer_bgp_id, pph.peer_ip, pph.peer_asn);
-
-    // Get header information
-    let timestamp = (pph.timestamp * 1000.0) as i64;
-
-    let is_post_policy = match pph.peer_flags {
-        PerPeerFlags::PeerFlags(flags) => flags.is_post_policy(),
-        PerPeerFlags::LocalRibPeerFlags(_) => false,
-    };
-
-    let is_adj_rib_out = match pph.peer_flags {
-        PerPeerFlags::PeerFlags(flags) => flags.is_adj_rib_out(),
-        PerPeerFlags::LocalRibPeerFlags(_) => false,
-    };
-
-    let header = UpdateHeader {
-        timestamp,
-        is_post_policy,
-        is_adj_rib_out,
+    // Extract header and peer information
+    let metadata = match new_metadata(router_addr, router_port, message.clone()) {
+        Some(m) => m,
+        None => return,
     };
 
     match message.message_body {
+        BmpMessageBody::InitiationMessage(_) => {
+            info!(
+                "InitiationMessage: {} - {}",
+                metadata.router_addr, metadata.peer_addr
+            )
+            // No-Op
+        }
         BmpMessageBody::PeerUpNotification(body) => {
             trace!("{:?}", body);
             info!(
                 "PeerUpNotification: {} - {}",
-                router_addr, peer.peer_address
+                metadata.router_addr, metadata.peer_addr
             );
-
-            process_peer_up_notification(state, tx, router_addr, router_port, peer).await;
+            process_peer_up_notification(state, tx, metadata, body).await;
         }
         BmpMessageBody::RouteMonitoring(body) => {
             trace!("{:?}", body);
-
-            process_route_monitoring(state, tx, router_addr, router_port, peer, header, body).await;
+            process_route_monitoring(state, tx, metadata, body).await;
+        }
+        BmpMessageBody::RouteMirroring(_) => {
+            info!(
+                "RouteMirroring: {} - {}",
+                metadata.router_addr, metadata.peer_addr
+            )
+            // No-Op
         }
         BmpMessageBody::PeerDownNotification(body) => {
             trace!("{:?}", body);
             info!(
                 "PeerDownNotification: {} - {}",
-                router_addr, peer.peer_address
+                metadata.router_addr, metadata.peer_addr
             );
-
-            process_peer_down_notification(state, tx, router_addr, router_port, peer).await;
+            process_peer_down_notification(state, tx, metadata, body).await;
         }
-        _ => (),
+
+        BmpMessageBody::TerminationMessage(_) => {
+            info!(
+                "TerminationMessage: {} - {}",
+                metadata.router_addr, metadata.peer_addr
+            )
+            // No-Op
+        }
+        BmpMessageBody::StatsReport(_) => {
+            info!(
+                "StatsReport: {} - {}",
+                metadata.router_addr, metadata.peer_addr
+            )
+            // No-Op
+        }
     }
 }
