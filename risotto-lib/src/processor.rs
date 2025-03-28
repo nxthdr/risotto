@@ -1,15 +1,14 @@
 use anyhow::Result;
 use bgpkit_parser::bmp::messages::{PeerDownNotification, PeerUpNotification, RouteMonitoring};
 use bgpkit_parser::parse_bmp_msg;
-use bgpkit_parser::parser::bmp::messages::{BmpMessage, BmpMessageBody};
+use bgpkit_parser::parser::bmp::messages::BmpMessage;
 use bytes::Bytes;
-use core::net::IpAddr;
 use std::sync::mpsc::Sender;
-use tracing::{error, info, trace};
+use tracing::trace;
 
 use crate::state::AsyncState;
 use crate::state::{peer_up_withdraws_handler, synthesize_withdraw_update};
-use crate::update::{decode_updates, new_metadata, new_peer_from_metadata, Update, UpdateMetadata};
+use crate::update::{decode_updates, new_peer_from_metadata, Update, UpdateMetadata};
 
 pub fn decode_bmp_message(bytes: &mut Bytes) -> Result<BmpMessage> {
     let message = match parse_bmp_msg(bytes) {
@@ -20,7 +19,7 @@ pub fn decode_bmp_message(bytes: &mut Bytes) -> Result<BmpMessage> {
     Ok(message)
 }
 
-pub async fn process_peer_up_notification(
+pub async fn peer_up_notification(
     state: Option<AsyncState>,
     tx: Sender<Update>,
     metadata: UpdateMetadata,
@@ -34,7 +33,7 @@ pub async fn process_peer_up_notification(
     }
 }
 
-pub async fn process_route_monitoring(
+pub async fn route_monitoring(
     state: Option<AsyncState>,
     tx: Sender<Update>,
     metadata: UpdateMetadata,
@@ -66,7 +65,7 @@ pub async fn process_route_monitoring(
     }
 }
 
-pub async fn process_peer_down_notification(
+pub async fn peer_down_notification(
     state: Option<AsyncState>,
     tx: Sender<Update>,
     metadata: UpdateMetadata,
@@ -97,81 +96,6 @@ pub async fn process_peer_down_notification(
 
             // Send the synthetic updates to the event pipeline
             tx.send(update).unwrap();
-        }
-    }
-}
-
-pub async fn process_bmp_message(
-    state: Option<AsyncState>,
-    tx: Sender<Update>,
-    router_addr: IpAddr,
-    router_port: u16,
-    bytes: &mut Bytes,
-) {
-    // Parse the BMP message
-    let message = match decode_bmp_message(bytes) {
-        Ok(message) => message,
-        Err(e) => {
-            error!("failed to decode BMP message: {}", e);
-            return;
-        }
-    };
-
-    // Extract header and peer information
-    let metadata = match new_metadata(router_addr, router_port, message.clone()) {
-        Some(m) => m,
-        None => return,
-    };
-
-    match message.message_body {
-        BmpMessageBody::InitiationMessage(_) => {
-            info!(
-                "InitiationMessage: {} - {}",
-                metadata.router_addr, metadata.peer_addr
-            )
-            // No-Op
-        }
-        BmpMessageBody::PeerUpNotification(body) => {
-            trace!("{:?}", body);
-            info!(
-                "PeerUpNotification: {} - {}",
-                metadata.router_addr, metadata.peer_addr
-            );
-            process_peer_up_notification(state, tx, metadata, body).await;
-        }
-        BmpMessageBody::RouteMonitoring(body) => {
-            trace!("{:?}", body);
-            process_route_monitoring(state, tx, metadata, body).await;
-        }
-        BmpMessageBody::RouteMirroring(_) => {
-            info!(
-                "RouteMirroring: {} - {}",
-                metadata.router_addr, metadata.peer_addr
-            )
-            // No-Op
-        }
-        BmpMessageBody::PeerDownNotification(body) => {
-            trace!("{:?}", body);
-            info!(
-                "PeerDownNotification: {} - {}",
-                metadata.router_addr, metadata.peer_addr
-            );
-            process_peer_down_notification(state, tx, metadata, body).await;
-        }
-
-        BmpMessageBody::TerminationMessage(_) => {
-            info!(
-                "TerminationMessage: {} - {}",
-                metadata.router_addr, metadata.peer_addr
-            )
-            // No-Op
-        }
-        BmpMessageBody::StatsReport(_) => {
-            info!(
-                "StatsReport: {} - {}",
-                metadata.router_addr, metadata.peer_addr
-            )
-            // No-Op
         }
     }
 }

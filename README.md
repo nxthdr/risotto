@@ -4,9 +4,9 @@
 
 # Risotto
 
-Risotto 😋 is a BGP updates collector that gathers BGP updates from routers via the BMP protocol. This repository contains the Risotto collector application and the Risotto library.
+Risotto 😋 is a BGP collector that processes BMP protocol messages from routers and publishes updates to Kafka/Redpanda. This repository includes both the Risotto collector application and the Risotto library.
 
-The application streams the BGP updates to a Kafka topic, which can be consumed by other components downstream. The library provides all the necessary components to decode BMP messages and produce BGP updates.
+The collector application streams BGP updates to a Kafka topic, enabling downstream components to consume them. The library offers essential components for decoding BMP messages and generating BGP updates.
 
 ## State Management
 
@@ -17,7 +17,7 @@ This state addresses two challenges when handling BMP data:
 
 Duplicate announcements could, in theory, be handled by the database, but less data manipulation is better. Instead, Risotto checks each incoming update against its state. If the prefix is already present, the update is discarded.
 
-For Peer Down notifications, Risotto leverages its state to generate synthetic withdraws for the prefixes announced by the downed peer.
+Missing withdraws are generated synthetically when receiving Peer Down notifications for the prefixes already announced by the downed peer.
 
 For persistance, Risotto dumps its state at specified interval, and fetches it at startup. Risotto is able to infer any missing withdraws that would have occured during downtime, from the initial peer up flow. This ensures the database remains accurate, even if the collector is restarted. On the other hand, a restart may result in duplicate announcements.
 In other words, Risotto guaranties that the database is always in a consistent state, but may contain some duplicate announcements.

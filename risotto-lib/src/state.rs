@@ -1,4 +1,4 @@
-use bgpkit_parser::models::{Origin, Peer as BGPkitPeer};
+use bgpkit_parser::models::Peer as BGPkitPeer;
 use chrono::Utc;
 use core::net::IpAddr;
 use rand::Rng;
@@ -223,7 +223,7 @@ pub fn synthesize_withdraw_update(prefix: TimedPrefix, metadata: UpdateMetadata)
         prefix_addr: prefix.prefix_addr,
         prefix_len: prefix.prefix_len,
         announced: false,
-        origin: Origin::INCOMPLETE,
+        origin: "INCOMPLETE".to_string(),
         path: vec![],
         communities: vec![],
         is_post_policy: prefix.is_post_policy,

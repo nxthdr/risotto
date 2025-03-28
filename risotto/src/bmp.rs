@@ -6,10 +6,10 @@ use tokio::io::AsyncReadExt;
 use tokio::net::TcpStream;
 use tracing::error;
 
-use risotto_lib::handler::process_bmp_message;
+use risotto_lib::process_bmp_message;
 use risotto_lib::state::AsyncState;
 
-pub async fn unmarshal_bmp_packet(socket: &mut TcpStream) -> Result<Bytes> {
+pub async fn decode_bmp_packet(socket: &mut TcpStream) -> Result<Bytes> {
     // Get minimal packet length to get how many bytes to remove from the socket
     let mut min_buff = [0; 6];
     socket.peek(&mut min_buff).await?;
@@ -44,7 +44,7 @@ pub async fn handle(socket: &mut TcpStream, state: Option<AsyncState>, tx: Sende
 
     loop {
         // Get BMP message
-        let mut bytes = match unmarshal_bmp_packet(socket).await {
+        let mut bytes = match decode_bmp_packet(socket).await {
             Ok(bytes) => bytes,
             Err(e) if e.kind() == ErrorKind::NotFound => {
                 // Empty message, continue
