@@ -2111,7 +2111,7 @@ dependencies = [
 
 [[package]]
 name = "risotto"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "axum",
@@ -2133,7 +2133,7 @@ dependencies = [
 
 [[package]]
 name = "risotto-lib"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "bgpkit-parser",
