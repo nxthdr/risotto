@@ -1,7 +1,6 @@
 use bgpkit_parser::models::Peer as BGPkitPeer;
 use chrono::Utc;
 use core::net::IpAddr;
-use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
@@ -236,15 +235,10 @@ pub async fn peer_up_withdraws_handler(
     state: AsyncState,
     tx: Sender<Update>,
     metadata: UpdateMetadata,
+    sleep_time: u64,
 ) {
     let startup = chrono::Utc::now();
-    let random = {
-        let mut rng = rand::rng();
-        rng.random_range(-60.0..60.0) as i64
-    };
-    let sleep_time = 300 + random; // 5 minutes +/- 1 minute
-
-    sleep(Duration::from_secs(sleep_time as u64)).await;
+    sleep(Duration::from_secs(sleep_time)).await;
 
     info!(
         "startup withdraws handler - {}:{} - {} removing updates older than {}",

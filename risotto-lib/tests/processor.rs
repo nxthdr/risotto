@@ -56,41 +56,31 @@ async fn test_peer_up_notification() {
 
 #[tokio::test]
 async fn test_route_monitoring() {
-    let (tx, rx) = mpsc::channel();
-    let state = new_state();
-
-    let metadata = UpdateMetadata {
-        timestamp: 0,
-        router_addr: IpAddr::from_str("192.0.1.0").unwrap(),
-        router_port: 179,
-        peer_addr: IpAddr::from_str("192.0.2.0").unwrap(),
-        peer_bgp_id: Ipv4Addr::from_str("192.0.2.0").unwrap(),
-        peer_asn: 65000,
-        is_post_policy: false,
-        is_adj_rib_out: false,
-    };
-
-    let body = RouteMonitoring {
-        bgp_message: BgpMessage::Update(BgpUpdateMessage {
-            announced_prefixes: vec![
-                (NetworkPrefix {
-                    prefix: "10.0.1.0/24".parse().unwrap(),
-                    path_id: 0,
-                }),
-            ],
-            withdrawn_prefixes: vec![],
-            attributes: Attributes::default(),
-        }),
-    };
-
-    route_monitoring(Some(state), tx, metadata, body).await;
-
-    let received = rx.try_recv();
-    assert!(received.is_ok());
-    let update = received.unwrap();
-    assert_eq!(
-        update,
-        Update {
+    let mut tests = vec![];
+    tests.push((
+        UpdateMetadata {
+            timestamp: 0,
+            router_addr: IpAddr::from_str("192.0.1.0").unwrap(),
+            router_port: 179,
+            peer_addr: IpAddr::from_str("192.0.2.0").unwrap(),
+            peer_bgp_id: Ipv4Addr::from_str("192.0.2.0").unwrap(),
+            peer_asn: 65000,
+            is_post_policy: false,
+            is_adj_rib_out: false,
+        },
+        RouteMonitoring {
+            bgp_message: BgpMessage::Update(BgpUpdateMessage {
+                announced_prefixes: vec![
+                    (NetworkPrefix {
+                        prefix: "10.0.1.0/24".parse().unwrap(),
+                        path_id: 0,
+                    }),
+                ],
+                withdrawn_prefixes: vec![],
+                attributes: Attributes::default(),
+            }),
+        },
+        vec![Update {
             timestamp: DateTime::from_timestamp(0, 0).unwrap(),
             router_addr: IpAddr::from_str("192.0.1.0").unwrap(),
             router_port: 179,
@@ -106,8 +96,20 @@ async fn test_route_monitoring() {
             path: vec![],
             communities: vec![],
             synthetic: false,
+        }],
+    ));
+
+    for (metadata, body, expects) in tests {
+        let (tx, rx) = mpsc::channel();
+        let state = new_state();
+
+        route_monitoring(Some(state), tx, metadata, body).await;
+
+        for expect in expects.iter() {
+            let update = rx.recv().unwrap();
+            assert_eq!(update, expect.clone());
         }
-    )
+    }
 }
 
 #[tokio::test]

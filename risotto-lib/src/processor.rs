@@ -3,6 +3,7 @@ use bgpkit_parser::bmp::messages::{PeerDownNotification, PeerUpNotification, Rou
 use bgpkit_parser::parse_bmp_msg;
 use bgpkit_parser::parser::bmp::messages::BmpMessage;
 use bytes::Bytes;
+use rand::Rng;
 use std::sync::mpsc::Sender;
 use tracing::trace;
 
@@ -28,7 +29,12 @@ pub async fn peer_up_notification(
     if let Some(spawn_state) = state {
         let spawn_state = spawn_state.clone();
         tokio::spawn(async move {
-            peer_up_withdraws_handler(spawn_state, tx, metadata).await;
+            let random = {
+                let mut rng = rand::rng();
+                rng.random_range(-60.0..60.0) as u64
+            };
+            let sleep_time = 300 + random; // 5 minutes +/- 1 minute
+            peer_up_withdraws_handler(spawn_state, tx, metadata, sleep_time).await;
         });
     }
 }
