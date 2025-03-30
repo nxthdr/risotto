@@ -1,5 +1,6 @@
 pub mod processor;
 pub mod state;
+pub mod state_store;
 pub mod update;
 
 use bgpkit_parser::parser::bmp::messages::BmpMessageBody;
@@ -12,10 +13,11 @@ use crate::processor::{
     decode_bmp_message, peer_down_notification, peer_up_notification, route_monitoring,
 };
 use crate::state::AsyncState;
+use crate::state_store::store::StateStore;
 use crate::update::{new_metadata, Update};
 
-pub async fn process_bmp_message(
-    state: Option<AsyncState>,
+pub async fn process_bmp_message<T: StateStore>(
+    state: Option<AsyncState<T>>,
     tx: Sender<Update>,
     router_addr: IpAddr,
     router_port: u16,

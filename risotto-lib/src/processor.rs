@@ -9,7 +9,8 @@ use tracing::trace;
 
 use crate::state::AsyncState;
 use crate::state::{peer_up_withdraws_handler, synthesize_withdraw_update};
-use crate::update::{decode_updates, new_peer_from_metadata, Update, UpdateMetadata};
+use crate::state_store::store::StateStore;
+use crate::update::{decode_updates, Update, UpdateMetadata};
 
 pub fn decode_bmp_message(bytes: &mut Bytes) -> Result<BmpMessage> {
     let message = match parse_bmp_msg(bytes) {
@@ -20,27 +21,27 @@ pub fn decode_bmp_message(bytes: &mut Bytes) -> Result<BmpMessage> {
     Ok(message)
 }
 
-pub async fn peer_up_notification(
-    state: Option<AsyncState>,
+pub async fn peer_up_notification<T: StateStore>(
+    state: Option<AsyncState<T>>,
     tx: Sender<Update>,
     metadata: UpdateMetadata,
     _: PeerUpNotification,
 ) {
     if let Some(spawn_state) = state {
         let spawn_state = spawn_state.clone();
+        let random = {
+            let mut rng = rand::rng();
+            rng.random_range(-60.0..60.0) as u64
+        };
+        let sleep_time = 300 + random; // 5 minutes +/- 1 minute
         tokio::spawn(async move {
-            let random = {
-                let mut rng = rand::rng();
-                rng.random_range(-60.0..60.0) as u64
-            };
-            let sleep_time = 300 + random; // 5 minutes +/- 1 minute
             peer_up_withdraws_handler(spawn_state, tx, metadata, sleep_time).await;
         });
     }
 }
 
-pub async fn route_monitoring(
-    state: Option<AsyncState>,
+pub async fn route_monitoring<T: StateStore>(
+    state: Option<AsyncState<T>>,
     tx: Sender<Update>,
     metadata: UpdateMetadata,
     body: RouteMonitoring,
@@ -49,11 +50,10 @@ pub async fn route_monitoring(
 
     let mut legitimate_updates = Vec::new();
     if let Some(state) = &state {
-        let peer = new_peer_from_metadata(metadata.clone());
         let mut state_lock = state.lock().unwrap();
         for update in potential_updates {
             let is_updated = state_lock
-                .update(&metadata.router_addr.clone(), &peer, &update)
+                .update(&metadata.router_addr.clone(), &metadata.peer_addr, &update)
                 .unwrap();
             if is_updated {
                 legitimate_updates.push(update);
@@ -71,8 +71,8 @@ pub async fn route_monitoring(
     }
 }
 
-pub async fn peer_down_notification(
-    state: Option<AsyncState>,
+pub async fn peer_down_notification<T: StateStore>(
+    state: Option<AsyncState<T>>,
     tx: Sender<Update>,
     metadata: UpdateMetadata,
     _: PeerDownNotification,
@@ -80,13 +80,11 @@ pub async fn peer_down_notification(
     if let Some(state) = state {
         // Remove the peer and the associated updates from the state
         // We start by emiting synthetic withdraw updates
-
-        let peer = new_peer_from_metadata(metadata.clone());
         let mut state_lock = state.lock().unwrap();
 
         let mut synthetic_updates = Vec::new();
         let updates = state_lock
-            .get_updates_by_peer(&metadata.router_addr, &peer)
+            .get_updates_by_peer(&metadata.router_addr, &metadata.peer_addr)
             .unwrap();
         for prefix in updates {
             synthetic_updates.push(synthesize_withdraw_update(prefix.clone(), metadata.clone()));
@@ -94,7 +92,7 @@ pub async fn peer_down_notification(
 
         // Then update the state
         state_lock
-            .remove_updates(&metadata.router_addr, &peer)
+            .remove_updates(&metadata.router_addr, &metadata.peer_addr)
             .unwrap();
 
         for update in synthetic_updates {

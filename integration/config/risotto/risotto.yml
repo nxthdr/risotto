@@ -13,6 +13,6 @@ kafka:
   topic: risotto-updates
 
 state:
-  enable: false
+  enable: true
   path: /app/state.json
   save_interval: 10
