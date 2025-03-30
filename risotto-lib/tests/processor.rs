@@ -11,6 +11,7 @@ use bgpkit_parser::models::{
 use chrono::DateTime;
 use risotto_lib::processor::{peer_down_notification, peer_up_notification, route_monitoring};
 use risotto_lib::state::new_state;
+use risotto_lib::state_store::memory::MemoryStore;
 use risotto_lib::update::{Update, UpdateMetadata};
 
 fn default_open_message() -> BgpOpenMessage {
@@ -27,7 +28,8 @@ fn default_open_message() -> BgpOpenMessage {
 #[tokio::test]
 async fn test_peer_up_notification() {
     let (tx, rx) = mpsc::channel();
-    let state = new_state();
+    let store = MemoryStore::new();
+    let state = new_state(store);
 
     let metadata = UpdateMetadata {
         timestamp: 0,
@@ -101,7 +103,8 @@ async fn test_route_monitoring() {
 
     for (metadata, body, expects) in tests {
         let (tx, rx) = mpsc::channel();
-        let state = new_state();
+        let store = MemoryStore::new();
+        let state = new_state(store);
 
         route_monitoring(Some(state), tx, metadata, body).await;
 
@@ -115,7 +118,8 @@ async fn test_route_monitoring() {
 #[tokio::test]
 async fn test_peer_down_notification() {
     let (tx, rx) = mpsc::channel();
-    let state = new_state();
+    let store = MemoryStore::new();
+    let state = new_state(store);
 
     let metadata = UpdateMetadata {
         timestamp: 0,

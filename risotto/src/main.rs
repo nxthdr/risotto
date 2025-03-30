@@ -9,7 +9,6 @@ use anyhow::Result;
 use clap::Parser;
 use clap_verbosity_flag::{InfoLevel, Verbosity};
 use config::AppConfig;
-use risotto_lib::update::Update;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::Arc;
 use std::time::Duration;
@@ -19,6 +18,9 @@ use tracing::{debug, info};
 
 use risotto_lib::state::new_state;
 use risotto_lib::state::AsyncState;
+use risotto_lib::state_store::memory::MemoryStore;
+use risotto_lib::state_store::store::StateStore;
+use risotto_lib::update::Update;
 
 use crate::config::app_config;
 
@@ -43,16 +45,20 @@ fn set_tracing(cli: &Cli) -> Result<()> {
     Ok(())
 }
 
-async fn api_handler(state: Option<AsyncState>, cfg: Arc<AppConfig>) {
+async fn api_handler<T: StateStore>(state: Option<AsyncState<T>>, cfg: Arc<AppConfig>) {
     let api_config = cfg.api.clone();
     debug!("binding api listener to {}", api_config.host);
     let api_listener = TcpListener::bind(api_config.host).await.unwrap();
 
-    let app = api::app(state.clone());
+    let app = api::app(state);
     axum::serve(api_listener, app).await.unwrap();
 }
 
-async fn bmp_handler(state: Option<AsyncState>, cfg: Arc<AppConfig>, tx: Sender<Update>) {
+async fn bmp_handler<T: StateStore>(
+    state: Option<AsyncState<T>>,
+    cfg: Arc<AppConfig>,
+    tx: Sender<Update>,
+) {
     let bmp_config = cfg.bmp.clone();
 
     debug!("binding bmp listener to {}", bmp_config.host);
@@ -76,7 +82,10 @@ async fn producer_handler(cfg: Arc<AppConfig>, rx: Receiver<Update>) {
     producer::handle(&kafka_config, rx).await;
 }
 
-async fn state_handler(state: Option<AsyncState>, cfg: Arc<AppConfig>) {
+async fn state_handler<T: StateStore + serde::Serialize>(
+    state: Option<AsyncState<T>>,
+    cfg: Arc<AppConfig>,
+) {
     let state_config = cfg.state.clone();
     state::dump_handler(state.clone(), state_config).await;
 }
@@ -94,7 +103,8 @@ async fn main() -> Result<()> {
     let state = match state_config.enable {
         true => {
             debug!("state is enabled");
-            let state = new_state();
+            let store = MemoryStore::new();
+            let state = new_state(store);
             state::load(state.clone(), state_config.clone());
             Some(state)
         }

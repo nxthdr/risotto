@@ -1,5 +1,4 @@
 use bytes::Bytes;
-use risotto_lib::update::Update;
 use std::io::{Error, ErrorKind, Result};
 use std::sync::mpsc::Sender;
 use tokio::io::AsyncReadExt;
@@ -8,6 +7,8 @@ use tracing::error;
 
 use risotto_lib::process_bmp_message;
 use risotto_lib::state::AsyncState;
+use risotto_lib::state_store::store::StateStore;
+use risotto_lib::update::Update;
 
 pub async fn decode_bmp_packet(socket: &mut TcpStream) -> Result<Bytes> {
     // Get minimal packet length to get how many bytes to remove from the socket
@@ -36,7 +37,11 @@ pub async fn decode_bmp_packet(socket: &mut TcpStream) -> Result<Bytes> {
     Ok(Bytes::copy_from_slice(&buf))
 }
 
-pub async fn handle(socket: &mut TcpStream, state: Option<AsyncState>, tx: Sender<Update>) {
+pub async fn handle<T: StateStore>(
+    socket: &mut TcpStream,
+    state: Option<AsyncState<T>>,
+    tx: Sender<Update>,
+) {
     // Get router IP information
     let socket_info = socket.peer_addr().unwrap();
     let router_ip = socket_info.ip();

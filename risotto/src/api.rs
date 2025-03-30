@@ -4,7 +4,7 @@ use metrics::{Key, Label, Recorder};
 use metrics_exporter_prometheus::PrometheusBuilder;
 use serde::{Deserialize, Serialize};
 
-use risotto_lib::state::AsyncState;
+use risotto_lib::{state::AsyncState, state_store::store::StateStore};
 
 static METADATA: metrics::Metadata =
     metrics::Metadata::new(module_path!(), metrics::Level::INFO, Some(module_path!()));
@@ -22,22 +22,27 @@ struct APIPeer {
     ipv6: usize,
 }
 
-#[derive(Clone)]
-struct AppState {
-    state: Option<AsyncState>,
+struct AppState<T: StateStore> {
+    state: Option<AsyncState<T>>,
 }
 
-pub fn app(state: Option<AsyncState>) -> Router {
-    let app_state = AppState {
-        state: state.clone(),
-    };
+impl<T: StateStore> Clone for AppState<T> {
+    fn clone(&self) -> Self {
+        Self {
+            state: self.state.clone(),
+        }
+    }
+}
+
+pub fn app<T: StateStore>(state: Option<AsyncState<T>>) -> Router {
+    let app_state = AppState { state };
 
     Router::new()
         .route("/", get(root).with_state(app_state.clone()))
         .route("/metrics", get(metrics).with_state(app_state.clone()))
 }
 
-async fn format(state: AsyncState) -> Vec<APIRouter> {
+async fn format<T: StateStore>(state: AsyncState<T>) -> Vec<APIRouter> {
     let mut api_routers: Vec<APIRouter> = Vec::new();
     let state = state.lock().unwrap();
 
@@ -96,20 +101,19 @@ async fn format(state: AsyncState) -> Vec<APIRouter> {
     api_routers
 }
 
-async fn root(AxumState(AppState { state, .. }): AxumState<AppState>) -> Json<Vec<APIRouter>> {
-    match state {
+async fn root<T: StateStore>(
+    AxumState(AppState { state }): AxumState<AppState<T>>,
+) -> Json<Vec<APIRouter>> {
+    match state.as_ref() {
         Some(state) => {
-            let api_routers = format(state).await;
+            let api_routers = format(state.clone()).await;
             Json(api_routers)
         }
-        None => {
-            // TODO: return an HTTP error instead
-            return Json(Vec::new());
-        }
+        None => Json(Vec::new()),
     }
 }
 
-async fn metrics(AxumState(AppState { state }): AxumState<AppState>) -> String {
+async fn metrics<T: StateStore>(AxumState(AppState { state }): AxumState<AppState<T>>) -> String {
     if state.is_none() {
         return String::new();
     }

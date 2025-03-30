@@ -1,13 +1,13 @@
+use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use tokio::time::sleep;
 use tracing::debug;
 
 use risotto_lib::state::AsyncState;
-use risotto_lib::state::MemoryStore;
+use risotto_lib::state_store::store::StateStore;
 
 use crate::config::StateConfig;
-
-pub fn dump(state: AsyncState, cfg: StateConfig) {
+pub fn dump<T: StateStore + Serialize>(state: AsyncState<T>, cfg: StateConfig) {
     let state_lock = state.lock().unwrap();
     let temp_path = format!("{}.tmp", cfg.path);
     let file = std::fs::File::create(&temp_path).unwrap();
@@ -16,7 +16,7 @@ pub fn dump(state: AsyncState, cfg: StateConfig) {
     std::fs::rename(temp_path, cfg.path.clone()).unwrap();
 }
 
-pub fn load(state: AsyncState, cfg: StateConfig) {
+pub fn load<T: StateStore + for<'de> Deserialize<'de>>(state: AsyncState<T>, cfg: StateConfig) {
     let mut state_lock = state.lock().unwrap();
 
     let file = match std::fs::File::open(cfg.path.clone()) {
@@ -25,11 +25,14 @@ pub fn load(state: AsyncState, cfg: StateConfig) {
     };
 
     let reader = std::io::BufReader::new(file);
-    let store: MemoryStore = serde_json::from_reader(reader).unwrap();
+    let store = serde_json::from_reader(reader).unwrap();
     state_lock.store = store;
 }
 
-pub async fn dump_handler(state: Option<AsyncState>, cfg: StateConfig) {
+pub async fn dump_handler<T: StateStore + Serialize>(
+    state: Option<AsyncState<T>>,
+    cfg: StateConfig,
+) {
     loop {
         // TODO do not spawn this task if state is disabled
         sleep(Duration::from_secs(cfg.interval)).await;
