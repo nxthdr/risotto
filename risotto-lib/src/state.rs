@@ -117,8 +117,8 @@ pub async fn peer_up_withdraws_handler<T: StateStore>(
     sleep(Duration::from_secs(sleep_time)).await;
 
     info!(
-        "startup withdraws handler - {}:{} - {} removing updates older than {}",
-        metadata.router_addr, metadata.router_port, metadata.peer_addr, startup
+        "[{}]:{} - {} - removing updates older than {} after waited {} seconds",
+        metadata.router_addr, metadata.router_port, metadata.peer_addr, startup, sleep_time
     );
 
     let state_lock = state.lock().unwrap();
@@ -138,8 +138,9 @@ pub async fn peer_up_withdraws_handler<T: StateStore>(
     }
 
     info!(
-        "startup withdraws handler - {} - {} emitting {} synthetic withdraw updates",
+        "[{}]:{} - {} - emitting {} synthetic withdraw updates",
         metadata.router_addr,
+        metadata.router_port,
         metadata.peer_addr,
         synthetic_updates.len()
     );

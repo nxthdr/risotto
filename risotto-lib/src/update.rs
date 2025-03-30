@@ -111,7 +111,7 @@ pub fn decode_updates(message: RouteMonitoring, metadata: UpdateMetadata) -> Opt
 pub fn new_metadata(
     router_addr: IpAddr,
     router_port: u16,
-    message: BmpMessage,
+    message: &BmpMessage,
 ) -> Option<UpdateMetadata> {
     // Get peer information
     let Some(pph) = message.per_peer_header else {
