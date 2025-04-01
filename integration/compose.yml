@@ -1,13 +1,10 @@
 services:
-  bird_10:
-    image: ghcr.io/nxthdr/bird:2.16
-    user: root
-    cap_add:
-      - NET_ADMIN
-      - NET_BROADCAST
-      - NET_RAW
+  gobgp10:
+    image: jauderho/gobgp:latest
+    command: gobgpd --config-file /etc/gobgp/gobgp.toml
+    platform: linux/amd64
     volumes:
-      - ./config/bird/bird_10.conf:/etc/bird/bird.conf:ro
+      - ./config/gobgp/gobgp10.toml:/etc/gobgp/gobgp.toml:ro
     networks:
       integration:
         ipv4_address: 10.0.0.10
@@ -15,15 +12,12 @@ services:
       - redpanda
       - clickhouse
 
-  bird_20:
-    image: ghcr.io/nxthdr/bird:2.16
-    user: root
-    cap_add:
-      - NET_ADMIN
-      - NET_BROADCAST
-      - NET_RAW
+  gobgp20:
+    image: jauderho/gobgp:latest
+    command: gobgpd --config-file /etc/gobgp/gobgp.toml
+    platform: linux/amd64
     volumes:
-      - ./config/bird/bird_20.conf:/etc/bird/bird.conf:ro
+      - ./config/gobgp/gobgp20.toml:/etc/gobgp/gobgp.toml:ro
     networks:
       integration:
         ipv4_address: 10.0.0.20

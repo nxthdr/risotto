@@ -1,7 +1,9 @@
 # Integration tests
 
-The integration tests setup consists in two [Bird](https://bird.network.cz/) routers exchanging static routes via a eBGP session.
-Check out the [routers](./config/bird/) and [Risotto](./config/risotto/) configuration.
+The integration tests setup consists in two [gobgp](https://github.com/osrg/gobgp) routers peering together.
+Check out the [routers](./config/gobgp/) and [Risotto](./config/risotto/) configuration.
+
+In the [tests](./tests/) folder you can find the test cases that are run against the setup.
 
 Both routers are configured to send BMP messages to the Risotto instance accessible at the bridge IP address `10.0.0.100`.
 Risotto sends the BMP messages to a Redpanda instance.
@@ -29,11 +31,10 @@ curl -s http://127.0.0.1:3000 |jq
 curl -s http://127.0.0.1:3000/metrics
 ```
 
-* You can exec into one router container to interact with bird
+* You can interact with the gobgp routers this way:
 
 ```sh
-docker exec -ti integration-bird_10-1 /bin/bash
-birdc
+docker exec -ti integration-gobgp10-1 gobgp neighbor
 ```
 
 * You can exec into redpanda container to interact with it

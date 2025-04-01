@@ -69,4 +69,4 @@ curl -s http://localhost:3000
 
 ## Contributing
 
-Refer to the Docker Compose [integration](./integration/) tests to try Risotto locally. The setup includes two [Bird](https://bird.network.cz/) routers that connect to Risotto, sharing updates announced between them.
+Refer to the Docker Compose [integration](./integration/) tests to try Risotto locally. The setup includes two routers sharing updates announced between them, and transmitting BMP messages to Risotto.
