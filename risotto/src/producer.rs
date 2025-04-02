@@ -32,7 +32,7 @@ pub async fn handle(config: &KafkaConfig, rx: Receiver<Update>) {
             mechanism: config.auth_sasl_mechanism.clone(),
         }),
         _ => {
-            error!("Invalid Kafka producer authentication protocol");
+            error!("invalid Kafka producer authentication protocol");
             return;
         }
     };
@@ -90,7 +90,7 @@ pub async fn handle(config: &KafkaConfig, rx: Receiver<Update>) {
             }
 
             let message = message.unwrap();
-            trace!("received  {:?}", message);
+            trace!("{:?}", message);
 
             // Format the update
             let message = format_update_to_csv(&message);

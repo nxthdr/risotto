@@ -37,7 +37,7 @@ pub async fn dump_handler<T: StateStore + Serialize>(
         // TODO do not spawn this task if state is disabled
         sleep(Duration::from_secs(cfg.interval)).await;
         if let Some(ref state) = state {
-            debug!("dump handler - dumping state to {}", cfg.path);
+            debug!("dumping state to {}", cfg.path);
             dump(state.clone(), cfg.clone());
         }
     }

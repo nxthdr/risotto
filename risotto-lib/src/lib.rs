@@ -7,7 +7,7 @@ use bgpkit_parser::parser::bmp::messages::BmpMessageBody;
 use bytes::Bytes;
 use core::net::IpAddr;
 use std::sync::mpsc::Sender;
-use tracing::{error, info, trace};
+use tracing::{debug, error, info, trace};
 
 use crate::processor::{
     decode_bmp_message, peer_down_notification, peer_up_notification, route_monitoring,
@@ -32,60 +32,79 @@ pub async fn process_bmp_message<T: StateStore>(
         }
     };
 
+    trace!("[{}]:{} - {:?}", router_addr, router_port, message);
+
     // Extract header and peer information
-    let metadata = match new_metadata(router_addr, router_port, message.clone()) {
-        Some(m) => m,
-        None => return,
-    };
+    let metadata = new_metadata(router_addr, router_port, &message);
 
     match message.message_body {
-        BmpMessageBody::InitiationMessage(_) => {
+        BmpMessageBody::InitiationMessage(body) => {
+            let tlvs_info = body
+                .tlvs
+                .iter()
+                .map(|tlv| tlv.info.clone())
+                .collect::<Vec<_>>();
             info!(
-                "InitiationMessage: {} - {}",
-                metadata.router_addr, metadata.peer_addr
-            )
+                "[{}]:{} - InitiationMessage: {:?}",
+                router_addr, router_port, tlvs_info
+            );
             // No-Op
         }
         BmpMessageBody::PeerUpNotification(body) => {
             trace!("{:?}", body);
+            if metadata.is_none() {
+                error!(
+                    "[{}]:{} - PeerUpNotification - no per-peer header",
+                    router_addr, router_port
+                );
+                return;
+            }
+            let metadata = metadata.unwrap();
             info!(
-                "PeerUpNotification: {} - {}",
-                metadata.router_addr, metadata.peer_addr
+                "[{}]:{} - PeerUpNotification - {}",
+                metadata.router_addr, metadata.router_port, metadata.peer_addr
             );
             peer_up_notification(state, tx, metadata, body).await;
         }
         BmpMessageBody::RouteMonitoring(body) => {
-            trace!("{:?}", body);
+            debug!("{:?}", body);
+            if metadata.is_none() {
+                error!(
+                    "[{}]:{} - RouteMonitoring - no per-peer header",
+                    router_addr, router_port
+                );
+                return;
+            }
+            let metadata = metadata.unwrap();
             route_monitoring(state, tx, metadata, body).await;
         }
         BmpMessageBody::RouteMirroring(_) => {
-            info!(
-                "RouteMirroring: {} - {}",
-                metadata.router_addr, metadata.peer_addr
-            )
+            info!("[{}]:{} - RouteMirroring", router_addr, router_port)
             // No-Op
         }
         BmpMessageBody::PeerDownNotification(body) => {
             trace!("{:?}", body);
+            if metadata.is_none() {
+                error!(
+                    "[{}]:{} - RouteMonitoring - no per-peer header",
+                    router_addr, router_port
+                );
+                return;
+            }
+            let metadata = metadata.unwrap();
             info!(
-                "PeerDownNotification: {} - {}",
-                metadata.router_addr, metadata.peer_addr
+                "[{}]:{} - PeerDownNotification: - {}",
+                metadata.router_addr, metadata.router_port, metadata.peer_addr
             );
             peer_down_notification(state, tx, metadata, body).await;
         }
 
         BmpMessageBody::TerminationMessage(_) => {
-            info!(
-                "TerminationMessage: {} - {}",
-                metadata.router_addr, metadata.peer_addr
-            )
+            info!("[{}]:{} - TerminationMessage", router_addr, router_port)
             // No-Op
         }
         BmpMessageBody::StatsReport(_) => {
-            info!(
-                "StatsReport: {} - {}",
-                metadata.router_addr, metadata.peer_addr
-            )
+            info!("[{}]:{} - StatsReport", router_addr, router_port)
             // No-Op
         }
     }

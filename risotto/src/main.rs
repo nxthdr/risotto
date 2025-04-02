@@ -65,13 +65,14 @@ async fn bmp_handler<T: StateStore>(
     let bmp_listener = TcpListener::bind(bmp_config.host).await.unwrap();
 
     loop {
-        let (mut bmp_socket, _) = bmp_listener.accept().await.unwrap();
+        let (mut bmp_stream, _) = bmp_listener.accept().await.unwrap();
         let bmp_state = state.clone();
         let tx = tx.clone();
 
         // Spawn a new task for each BMP connection
         tokio::spawn(async move {
-            bmp::handle(&mut bmp_socket, bmp_state.clone(), tx).await;
+            let _ = bmp::handle(&mut bmp_stream, bmp_state.clone(), tx).await;
+            drop(bmp_stream);
         });
     }
 }
