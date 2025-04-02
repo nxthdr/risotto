@@ -23,6 +23,9 @@ pub async fn handle<T: StateStore>(
     debug!("[{}]:{} - session established", router_addr, router_port);
 
     loop {
+        // Wait for the stream to be readable
+        stream.readable().await?;
+
         // Get minimal packet length to get how many bytes to remove from the socket
         let mut common_header = [0; 6];
         let n_bytes_peeked = stream.peek(&mut common_header).await?;
