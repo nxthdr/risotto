@@ -25,7 +25,12 @@ pub async fn handle<T: StateStore>(
     loop {
         // Get minimal packet length to get how many bytes to remove from the socket
         let mut common_header = [0; 6];
-        stream.peek(&mut common_header).await?;
+        let n_bytes_peeked = stream.peek(&mut common_header).await?;
+        if n_bytes_peeked != 6 {
+            trace!("[{}]:{} - incomplete peek", router_addr, router_port);
+            trace!("[{}]:{} - {:02x?}", router_addr, router_port, common_header);
+            continue;
+        }
 
         // Get the message version from the `Version` BMP field
         let message_version = u8::from_be(common_header[0]);
