@@ -8,7 +8,7 @@ In the [tests](./tests/) folder you can find the test cases that are run against
 Both routers are configured to send BMP messages to the Risotto instance accessible at the bridge IP address `10.0.0.100`.
 Risotto sends the BMP messages to a Redpanda instance.
 
-The `risotto.from_kafka` table is using the ClickHouse [Kafka engine](https://clickhouse.com/docs/en/engines/table-engines/integrations/kafka) to fetch the results from Redpanda. The `risotto.updates` table is used to store the results.
+The `bmp.from_kafka` table is using the ClickHouse [Kafka engine](https://clickhouse.com/docs/en/engines/table-engines/integrations/kafka) to fetch the results from Redpanda. The `bmp.updates` table is used to store the results.
 
 
 ## Usage
