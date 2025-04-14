@@ -16,7 +16,6 @@ pub fn serialize_ip_addr(ip: IpAddr) -> Vec<u8> {
 pub fn serialize_update(update: &Update) -> Vec<u8> {
     let mut message = Builder::new_default();
     {
-        // Construct the update message based on the Update struct
         let mut u = message.init_root::<update::Builder>();
         u.set_time_received_ns(update.time_received_ns.timestamp_nanos_opt().unwrap() as u64);
         u.set_time_bmp_header_ns(update.time_bmp_header_ns.timestamp_nanos_opt().unwrap() as u64);
@@ -27,11 +26,16 @@ pub fn serialize_update(update: &Update) -> Vec<u8> {
         u.set_peer_asn(update.peer_asn);
         u.set_prefix_addr(&serialize_ip_addr(update.prefix_addr));
         u.set_prefix_len(update.prefix_len);
-        u.set_announced(update.announced);
         u.set_is_post_policy(update.is_post_policy);
         u.set_is_adj_rib_out(update.is_adj_rib_out);
+        u.set_announced(update.announced);
+        u.set_next_hop(&serialize_ip_addr(
+            update.next_hop.unwrap_or(IpAddr::from([0; 16])),
+        ));
         u.set_origin(&update.origin);
         let _ = u.set_path(&update.path[..]);
+        u.set_local_preference(update.local_preference.unwrap_or(0));
+        u.set_med(update.med.unwrap_or(0));
         let mut communities = u
             .reborrow()
             .init_communities(update.communities.len() as u32);

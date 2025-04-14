@@ -28,11 +28,14 @@ pub struct Update {
     pub peer_asn: u32,
     pub prefix_addr: IpAddr,
     pub prefix_len: u8,
-    pub announced: bool,
     pub is_post_policy: bool,
     pub is_adj_rib_out: bool,
+    pub announced: bool,
+    pub next_hop: Option<IpAddr>,
     pub origin: String,
     pub path: Vec<u32>,
+    pub local_preference: Option<u32>,
+    pub med: Option<u32>,
     pub communities: Vec<(u32, u16)>,
     pub synthetic: bool,
 }
@@ -65,11 +68,14 @@ pub fn decode_updates(message: RouteMonitoring, metadata: UpdateMetadata) -> Opt
             }
 
             // Get the other attributes
+            let next_hop = attributes.next_hop();
             let origin = attributes.origin();
             let path = match attributes.as_path() {
                 Some(path) => Some(path.clone()),
                 None => None,
             };
+            let local_preference = attributes.local_preference();
+            let med = attributes.multi_exit_discriminator();
             let communities: Vec<MetaCommunity> = attributes.iter_communities().collect();
 
             let time_bmp_header_ns = match Utc.timestamp_millis_opt(metadata.time_bmp_header_ns) {
@@ -94,11 +100,14 @@ pub fn decode_updates(message: RouteMonitoring, metadata: UpdateMetadata) -> Opt
                     peer_asn: metadata.peer_asn,
                     prefix_addr: map_to_ipv6(prefix.prefix.addr()),
                     prefix_len: prefix.prefix.prefix_len(),
-                    announced,
                     is_post_policy: metadata.is_post_policy,
                     is_adj_rib_out: metadata.is_adj_rib_out,
+                    announced,
+                    next_hop: next_hop.map(|ip| map_to_ipv6(ip)),
                     origin: origin.to_string(),
                     path: new_path(path.clone()),
+                    local_preference,
+                    med,
                     communities: new_communities(&communities.clone()),
                     synthetic: false,
                 });

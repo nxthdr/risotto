@@ -10,13 +10,16 @@ struct Update {
     peerAsn            @6  :UInt32;
     prefixAddr         @7  :Data;
     prefixLen          @8  :UInt8;
-    announced          @9  :Bool;
-    isPostPolicy       @10  :Bool;
-    isAdjRibOut        @11 :Bool;
-    origin             @12 :Text;
-    path               @13 :List(UInt32);
-    communities        @14 :List(Community);
-    synthetic          @15 :Bool;
+    isPostPolicy       @9  :Bool;
+    isAdjRibOut        @10 :Bool;
+    announced          @11 :Bool;
+    nextHop            @12 :Data;
+    origin             @13 :Text;
+    path               @14 :List(UInt32);
+    localPreference    @15 :UInt32;
+    med                @16 :UInt32;
+    communities        @17 :List(Community);
+    synthetic          @18 :Bool;
 }
 
 struct Community {
