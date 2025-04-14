@@ -38,6 +38,7 @@ services:
     image: clickhouse/clickhouse-server:latest
     volumes:
       - ./config/clickhouse/docker-entrypoint-initdb.d:/docker-entrypoint-initdb.d
+      - ../risotto/schemas:/var/lib/clickhouse/format_schemas
     networks:
       integration:
         ipv4_address: 10.0.0.200

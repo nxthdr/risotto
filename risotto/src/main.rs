@@ -4,6 +4,7 @@ mod config;
 mod formatter;
 mod producer;
 mod state;
+mod update_capnp;
 
 use anyhow::Result;
 use clap::Parser;

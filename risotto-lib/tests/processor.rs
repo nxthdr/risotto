@@ -83,7 +83,7 @@ async fn test_route_monitoring() {
             }),
         },
         vec![Update {
-            timestamp: DateTime::from_timestamp(0, 0).unwrap(),
+            time_received_ns: DateTime::from_timestamp(0, 0).unwrap(),
             router_addr: IpAddr::from_str("192.0.1.0").unwrap(),
             router_port: 179,
             peer_addr: IpAddr::from_str("192.0.2.0").unwrap(),

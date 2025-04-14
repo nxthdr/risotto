@@ -19,7 +19,7 @@ pub struct UpdateMetadata {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Update {
-    pub timestamp: DateTime<Utc>,
+    pub time_received_ns: DateTime<Utc>,
     pub router_addr: IpAddr,
     pub router_port: u16,
     pub peer_addr: IpAddr,
@@ -71,7 +71,7 @@ pub fn decode_updates(message: RouteMonitoring, metadata: UpdateMetadata) -> Opt
             };
             let communities: Vec<MetaCommunity> = attributes.iter_communities().collect();
 
-            let timestamp = match Utc.timestamp_millis_opt(metadata.timestamp) {
+            let time_received_ns = match Utc.timestamp_millis_opt(metadata.timestamp) {
                 MappedLocalTime::Single(dt) => dt,
                 _ => {
                     error!(
@@ -84,7 +84,7 @@ pub fn decode_updates(message: RouteMonitoring, metadata: UpdateMetadata) -> Opt
 
             for (prefix, announced) in prefixes_to_update {
                 updates.push(Update {
-                    timestamp,
+                    time_received_ns,
                     router_addr: metadata.router_addr,
                     router_port: metadata.router_port,
                     peer_addr: metadata.peer_addr,
