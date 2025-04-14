@@ -110,7 +110,8 @@ async fn test_route_monitoring() {
         route_monitoring(Some(state), tx, metadata, body).await;
 
         for expect in expects.iter() {
-            let update = rx.recv().unwrap();
+            let mut update = rx.recv().unwrap();
+            update.time_received_ns = expect.time_received_ns;
             assert_eq!(update, expect.clone());
         }
     }
