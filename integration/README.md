@@ -25,7 +25,7 @@ docker compose up --build --force-recreate --renew-anon-volumes
 curl -s http://127.0.0.1:3000 |jq
 ```
 
-* Cet Prometheus metrics
+* Check Prometheus metrics
 
 ```sh
 curl -s http://127.0.0.1:3000/metrics
