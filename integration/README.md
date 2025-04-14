@@ -19,32 +19,37 @@ The `bmp.from_kafka` table is using the ClickHouse [Kafka engine](https://clickh
 docker compose up --build --force-recreate --renew-anon-volumes
 ```
 
-* You can check Risotto state
+* Check Risotto state:
 
 ```sh
 curl -s http://127.0.0.1:3000 |jq
 ```
 
-* Or get Prometheus metrics
+* Check Prometheus metrics
 
 ```sh
 curl -s http://127.0.0.1:3000/metrics
 ```
 
-* You can interact with the gobgp routers this way:
+* Interact with the gobgp routers:
 
 ```sh
 docker exec -ti integration-gobgp10-1 gobgp neighbor
 ```
 
-* You can exec into redpanda container to interact with it
+* Interact with redpanda container:
 
 ```sh
-docker exec -ti integration-redpanda-1 /bin/bash
-rpk topic consume bgp-updates
+docker exec -ti integration-redpanda-1 rpk group describe clickhouse-risotto-group
 ```
 
-* Stop the environment
+* Check the ClickHouse tables:
+
+```sh
+docker exec -ti integration-clickhouse-1 clickhouse-client --query "SELECT * FROM bmp.updates"
+```
+
+* Finally, stop the environment:
 
 ```sh
 docker compose down

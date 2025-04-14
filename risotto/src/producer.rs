@@ -7,7 +7,7 @@ use std::time::Duration;
 use tracing::{debug, error, info, trace};
 
 use crate::config::KafkaConfig;
-use crate::formatter::format_update_to_csv;
+use crate::formatter::serialize_update;
 
 #[derive(Clone)]
 pub struct SaslAuth {
@@ -62,16 +62,15 @@ pub async fn handle(config: &KafkaConfig, rx: Receiver<Update>) {
     };
 
     // Send to Kafka
-    let mut additional_message: Option<String> = None;
+    let mut additional_message: Option<Vec<u8>> = None;
     loop {
         let start_time = std::time::Instant::now();
-        let mut final_message = String::new();
+        let mut final_message = Vec::new();
         let mut n_messages = 0;
 
         // Send the additional message first
         if let Some(message) = additional_message {
-            final_message.push_str(&message);
-            final_message.push_str("\n");
+            final_message.extend_from_slice(&message);
             n_messages += 1;
             additional_message = None;
         }
@@ -93,16 +92,15 @@ pub async fn handle(config: &KafkaConfig, rx: Receiver<Update>) {
             trace!("{:?}", message);
 
             // Format the update
-            let message = format_update_to_csv(&message);
+            let message = serialize_update(&message);
 
             // Max message size is 1048576 bytes (including headers)
-            if final_message.len() + message.len() + 1 > config.message_max_bytes {
+            if final_message.len() + message.len() > config.message_max_bytes {
                 additional_message = Some(message);
                 break;
             }
 
-            final_message.push_str(&message);
-            final_message.push_str("\n");
+            final_message.extend_from_slice(&message);
             n_messages += 1;
         }
 
@@ -110,16 +108,12 @@ pub async fn handle(config: &KafkaConfig, rx: Receiver<Update>) {
             continue;
         }
 
-        // Remove the last newline character
-        final_message.pop();
-
-        debug!("{}", final_message);
         info!("sending {} updates to Kafka", n_messages);
 
         let delivery_status = producer
             .send(
                 FutureRecord::to(config.topic.as_str())
-                    .payload(&format!("{}", final_message))
+                    .payload(&final_message)
                     .key("")
                     .headers(OwnedHeaders::new()),
                 Duration::from_secs(0),

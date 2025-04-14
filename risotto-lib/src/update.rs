@@ -7,7 +7,7 @@ use tracing::error;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct UpdateMetadata {
-    pub timestamp: i64,
+    pub time_bmp_header_ns: i64,
     pub router_addr: IpAddr,
     pub router_port: u16,
     pub peer_addr: IpAddr,
@@ -19,7 +19,8 @@ pub struct UpdateMetadata {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Update {
-    pub timestamp: DateTime<Utc>,
+    pub time_received_ns: DateTime<Utc>,
+    pub time_bmp_header_ns: DateTime<Utc>,
     pub router_addr: IpAddr,
     pub router_port: u16,
     pub peer_addr: IpAddr,
@@ -27,11 +28,14 @@ pub struct Update {
     pub peer_asn: u32,
     pub prefix_addr: IpAddr,
     pub prefix_len: u8,
-    pub announced: bool,
     pub is_post_policy: bool,
     pub is_adj_rib_out: bool,
+    pub announced: bool,
+    pub next_hop: Option<IpAddr>,
     pub origin: String,
     pub path: Vec<u32>,
+    pub local_preference: Option<u32>,
+    pub med: Option<u32>,
     pub communities: Vec<(u32, u16)>,
     pub synthetic: bool,
 }
@@ -64,19 +68,22 @@ pub fn decode_updates(message: RouteMonitoring, metadata: UpdateMetadata) -> Opt
             }
 
             // Get the other attributes
+            let next_hop = attributes.next_hop();
             let origin = attributes.origin();
             let path = match attributes.as_path() {
                 Some(path) => Some(path.clone()),
                 None => None,
             };
+            let local_preference = attributes.local_preference();
+            let med = attributes.multi_exit_discriminator();
             let communities: Vec<MetaCommunity> = attributes.iter_communities().collect();
 
-            let timestamp = match Utc.timestamp_millis_opt(metadata.timestamp) {
+            let time_bmp_header_ns = match Utc.timestamp_millis_opt(metadata.time_bmp_header_ns) {
                 MappedLocalTime::Single(dt) => dt,
                 _ => {
                     error!(
                         "failed to parse timestamp: {}, using Utc::now()",
-                        metadata.timestamp
+                        metadata.time_bmp_header_ns
                     );
                     Utc::now()
                 }
@@ -84,7 +91,8 @@ pub fn decode_updates(message: RouteMonitoring, metadata: UpdateMetadata) -> Opt
 
             for (prefix, announced) in prefixes_to_update {
                 updates.push(Update {
-                    timestamp,
+                    time_received_ns: Utc::now(),
+                    time_bmp_header_ns,
                     router_addr: metadata.router_addr,
                     router_port: metadata.router_port,
                     peer_addr: metadata.peer_addr,
@@ -92,11 +100,14 @@ pub fn decode_updates(message: RouteMonitoring, metadata: UpdateMetadata) -> Opt
                     peer_asn: metadata.peer_asn,
                     prefix_addr: map_to_ipv6(prefix.prefix.addr()),
                     prefix_len: prefix.prefix.prefix_len(),
-                    announced,
                     is_post_policy: metadata.is_post_policy,
                     is_adj_rib_out: metadata.is_adj_rib_out,
+                    announced,
+                    next_hop: next_hop.map(|ip| map_to_ipv6(ip)),
                     origin: origin.to_string(),
                     path: new_path(path.clone()),
+                    local_preference,
+                    med,
                     communities: new_communities(&communities.clone()),
                     synthetic: false,
                 });
@@ -120,7 +131,7 @@ pub fn new_metadata(
     let peer = Peer::new(pph.peer_bgp_id, pph.peer_ip, pph.peer_asn);
 
     // Get header information
-    let timestamp = (pph.timestamp * 1000.0) as i64;
+    let time_bmp_header_ns = (pph.timestamp * 1000.0) as i64;
 
     let is_post_policy = match pph.peer_flags {
         PerPeerFlags::PeerFlags(flags) => flags.is_post_policy(),
@@ -133,7 +144,7 @@ pub fn new_metadata(
     };
 
     Some(UpdateMetadata {
-        timestamp,
+        time_bmp_header_ns,
         router_addr,
         router_port,
         peer_addr: map_to_ipv6(peer.peer_address),

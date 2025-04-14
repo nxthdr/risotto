@@ -32,7 +32,7 @@ async fn test_peer_up_notification() {
     let state = new_state(store);
 
     let metadata = UpdateMetadata {
-        timestamp: 0,
+        time_bmp_header_ns: 0,
         router_addr: IpAddr::from_str("192.0.1.0").unwrap(),
         router_port: 179,
         peer_addr: IpAddr::from_str("192.0.2.0").unwrap(),
@@ -61,7 +61,7 @@ async fn test_route_monitoring() {
     let mut tests = vec![];
     tests.push((
         UpdateMetadata {
-            timestamp: 0,
+            time_bmp_header_ns: 0,
             router_addr: IpAddr::from_str("192.0.1.0").unwrap(),
             router_port: 179,
             peer_addr: IpAddr::from_str("192.0.2.0").unwrap(),
@@ -83,7 +83,8 @@ async fn test_route_monitoring() {
             }),
         },
         vec![Update {
-            timestamp: DateTime::from_timestamp(0, 0).unwrap(),
+            time_received_ns: DateTime::from_timestamp(0, 0).unwrap(),
+            time_bmp_header_ns: DateTime::from_timestamp(0, 0).unwrap(),
             router_addr: IpAddr::from_str("192.0.1.0").unwrap(),
             router_port: 179,
             peer_addr: IpAddr::from_str("192.0.2.0").unwrap(),
@@ -91,11 +92,14 @@ async fn test_route_monitoring() {
             peer_asn: 65000,
             prefix_addr: IpAddr::from_str("::ffff:10.0.1.0").unwrap(),
             prefix_len: 24,
-            announced: true,
             is_post_policy: false,
             is_adj_rib_out: false,
+            announced: true,
+            next_hop: None,
             origin: "INCOMPLETE".to_string(),
             path: vec![],
+            local_preference: None,
+            med: None,
             communities: vec![],
             synthetic: false,
         }],
@@ -109,7 +113,8 @@ async fn test_route_monitoring() {
         route_monitoring(Some(state), tx, metadata, body).await;
 
         for expect in expects.iter() {
-            let update = rx.recv().unwrap();
+            let mut update = rx.recv().unwrap();
+            update.time_received_ns = expect.time_received_ns;
             assert_eq!(update, expect.clone());
         }
     }
@@ -122,7 +127,7 @@ async fn test_peer_down_notification() {
     let state = new_state(store);
 
     let metadata = UpdateMetadata {
-        timestamp: 0,
+        time_bmp_header_ns: 0,
         router_addr: IpAddr::from_str("192.0.1.0").unwrap(),
         router_port: 179,
         peer_addr: IpAddr::from_str("192.0.2.0").unwrap(),

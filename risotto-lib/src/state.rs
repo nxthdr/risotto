@@ -89,7 +89,8 @@ impl Hash for TimedPrefix {
 
 pub fn synthesize_withdraw_update(prefix: TimedPrefix, metadata: UpdateMetadata) -> Update {
     Update {
-        timestamp: Utc::now(),
+        time_received_ns: Utc::now(),
+        time_bmp_header_ns: Utc::now(),
         router_addr: metadata.router_addr,
         router_port: metadata.router_port,
         peer_addr: metadata.peer_addr,
@@ -97,12 +98,15 @@ pub fn synthesize_withdraw_update(prefix: TimedPrefix, metadata: UpdateMetadata)
         peer_asn: metadata.peer_asn,
         prefix_addr: prefix.prefix_addr,
         prefix_len: prefix.prefix_len,
-        announced: false,
-        origin: "INCOMPLETE".to_string(),
-        path: vec![],
-        communities: vec![],
         is_post_policy: prefix.is_post_policy,
         is_adj_rib_out: prefix.is_adj_rib_out,
+        announced: false,
+        next_hop: None,
+        origin: "INCOMPLETE".to_string(),
+        path: vec![],
+        local_preference: None,
+        med: None,
+        communities: vec![],
         synthetic: true,
     }
 }
