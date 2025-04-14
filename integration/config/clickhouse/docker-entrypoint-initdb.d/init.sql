@@ -2,6 +2,7 @@ CREATE DATABASE IF NOT EXISTS bmp;
 CREATE TABLE bmp.from_kafka
 (
 	timeReceivedNs UInt64,
+	timeBmpHeaderNs UInt64,
 	routerAddr IPv6,
 	routerPort UInt32,
 	peerAddr IPv6,
@@ -31,6 +32,7 @@ CREATE TABLE bmp.updates
 	date Date,
 	time_inserted_ns DateTime64(9),
 	time_received_ns DateTime64(9),
+	time_bmp_header_ns DateTime64(9),
 	router_addr IPv6,
 	router_port UInt32,
 	peer_addr IPv6,
@@ -56,6 +58,7 @@ AS SELECT
 	toDate(timeReceivedNs) AS date,
 	now() AS time_inserted_ns,
 	toDateTime64(timeReceivedNs/1000000000, 9) AS time_received_ns,
+	toDateTime64(timeBmpHeaderNs/1000000000, 9) AS time_bmp_header_ns,
 	routerAddr AS router_addr,
 	routerPort AS router_port,
 	peerAddr AS peer_addr,

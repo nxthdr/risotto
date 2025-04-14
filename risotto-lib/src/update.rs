@@ -7,7 +7,7 @@ use tracing::error;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct UpdateMetadata {
-    pub timestamp: i64,
+    pub time_bmp_header_ns: i64,
     pub router_addr: IpAddr,
     pub router_port: u16,
     pub peer_addr: IpAddr,
@@ -20,6 +20,7 @@ pub struct UpdateMetadata {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Update {
     pub time_received_ns: DateTime<Utc>,
+    pub time_bmp_header_ns: DateTime<Utc>,
     pub router_addr: IpAddr,
     pub router_port: u16,
     pub peer_addr: IpAddr,
@@ -71,12 +72,12 @@ pub fn decode_updates(message: RouteMonitoring, metadata: UpdateMetadata) -> Opt
             };
             let communities: Vec<MetaCommunity> = attributes.iter_communities().collect();
 
-            let time_received_ns = match Utc.timestamp_millis_opt(metadata.timestamp) {
+            let time_bmp_header_ns = match Utc.timestamp_millis_opt(metadata.time_bmp_header_ns) {
                 MappedLocalTime::Single(dt) => dt,
                 _ => {
                     error!(
                         "failed to parse timestamp: {}, using Utc::now()",
-                        metadata.timestamp
+                        metadata.time_bmp_header_ns
                     );
                     Utc::now()
                 }
@@ -84,7 +85,8 @@ pub fn decode_updates(message: RouteMonitoring, metadata: UpdateMetadata) -> Opt
 
             for (prefix, announced) in prefixes_to_update {
                 updates.push(Update {
-                    time_received_ns,
+                    time_received_ns: Utc::now(),
+                    time_bmp_header_ns,
                     router_addr: metadata.router_addr,
                     router_port: metadata.router_port,
                     peer_addr: metadata.peer_addr,
@@ -120,7 +122,7 @@ pub fn new_metadata(
     let peer = Peer::new(pph.peer_bgp_id, pph.peer_ip, pph.peer_asn);
 
     // Get header information
-    let timestamp = (pph.timestamp * 1000.0) as i64;
+    let time_bmp_header_ns = (pph.timestamp * 1000.0) as i64;
 
     let is_post_policy = match pph.peer_flags {
         PerPeerFlags::PeerFlags(flags) => flags.is_post_policy(),
@@ -133,7 +135,7 @@ pub fn new_metadata(
     };
 
     Some(UpdateMetadata {
-        timestamp,
+        time_bmp_header_ns,
         router_addr,
         router_port,
         peer_addr: map_to_ipv6(peer.peer_address),

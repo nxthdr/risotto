@@ -90,6 +90,7 @@ impl Hash for TimedPrefix {
 pub fn synthesize_withdraw_update(prefix: TimedPrefix, metadata: UpdateMetadata) -> Update {
     Update {
         time_received_ns: Utc::now(),
+        time_bmp_header_ns: Utc::now(),
         router_addr: metadata.router_addr,
         router_port: metadata.router_port,
         peer_addr: metadata.peer_addr,

@@ -32,7 +32,7 @@ async fn test_peer_up_notification() {
     let state = new_state(store);
 
     let metadata = UpdateMetadata {
-        timestamp: 0,
+        time_bmp_header_ns: 0,
         router_addr: IpAddr::from_str("192.0.1.0").unwrap(),
         router_port: 179,
         peer_addr: IpAddr::from_str("192.0.2.0").unwrap(),
@@ -61,7 +61,7 @@ async fn test_route_monitoring() {
     let mut tests = vec![];
     tests.push((
         UpdateMetadata {
-            timestamp: 0,
+            time_bmp_header_ns: 0,
             router_addr: IpAddr::from_str("192.0.1.0").unwrap(),
             router_port: 179,
             peer_addr: IpAddr::from_str("192.0.2.0").unwrap(),
@@ -84,6 +84,7 @@ async fn test_route_monitoring() {
         },
         vec![Update {
             time_received_ns: DateTime::from_timestamp(0, 0).unwrap(),
+            time_bmp_header_ns: DateTime::from_timestamp(0, 0).unwrap(),
             router_addr: IpAddr::from_str("192.0.1.0").unwrap(),
             router_port: 179,
             peer_addr: IpAddr::from_str("192.0.2.0").unwrap(),
@@ -122,7 +123,7 @@ async fn test_peer_down_notification() {
     let state = new_state(store);
 
     let metadata = UpdateMetadata {
-        timestamp: 0,
+        time_bmp_header_ns: 0,
         router_addr: IpAddr::from_str("192.0.1.0").unwrap(),
         router_port: 179,
         peer_addr: IpAddr::from_str("192.0.2.0").unwrap(),

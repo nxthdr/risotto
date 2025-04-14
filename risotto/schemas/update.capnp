@@ -2,20 +2,21 @@
 
 struct Update {
     timeReceivedNs     @0  :UInt64;
-    routerAddr         @1  :Data;
-    routerPort         @2  :UInt16;
-    peerAddr           @3  :Data;
-    peerBgpId          @4  :UInt32;
-    peerAsn            @5  :UInt32;
-    prefixAddr         @6  :Data;
-    prefixLen          @7  :UInt8;
-    announced          @8  :Bool;
-    isPostPolicy       @9  :Bool;
-    isAdjRibOut        @10 :Bool;
-    origin             @11 :Text;
-    path               @12 :List(UInt32);
-    communities        @13 :List(Community);
-    synthetic          @14 :Bool;
+    timeBmpHeaderNs    @1  :UInt64;
+    routerAddr         @2  :Data;
+    routerPort         @3  :UInt16;
+    peerAddr           @4  :Data;
+    peerBgpId          @5  :UInt32;
+    peerAsn            @6  :UInt32;
+    prefixAddr         @7  :Data;
+    prefixLen          @8  :UInt8;
+    announced          @9  :Bool;
+    isPostPolicy       @10  :Bool;
+    isAdjRibOut        @11 :Bool;
+    origin             @12 :Text;
+    path               @13 :List(UInt32);
+    communities        @14 :List(Community);
+    synthetic          @15 :Bool;
 }
 
 struct Community {

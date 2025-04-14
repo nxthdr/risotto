@@ -19,6 +19,7 @@ pub fn serialize_update(update: &Update) -> Vec<u8> {
         // Construct the update message based on the Update struct
         let mut u = message.init_root::<update::Builder>();
         u.set_time_received_ns(update.time_received_ns.timestamp_nanos_opt().unwrap() as u64);
+        u.set_time_bmp_header_ns(update.time_bmp_header_ns.timestamp_nanos_opt().unwrap() as u64);
         u.set_router_addr(&serialize_ip_addr(update.router_addr));
         u.set_router_port(update.router_port);
         u.set_peer_addr(&serialize_ip_addr(update.peer_addr));
