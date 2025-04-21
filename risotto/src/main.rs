@@ -10,12 +10,14 @@ use anyhow::Result;
 use clap::Parser;
 use clap_verbosity_flag::{InfoLevel, Verbosity};
 use config::AppConfig;
+use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
+use risotto_lib::statistics::{new_statistics, AsyncStatistics};
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio_graceful::Shutdown;
-use tracing::{debug, info};
+use tracing::debug;
 
 use risotto_lib::state::new_state;
 use risotto_lib::state::AsyncState;
@@ -46,17 +48,55 @@ fn set_tracing(cli: &Cli) -> Result<()> {
     Ok(())
 }
 
-async fn api_handler<T: StateStore>(state: Option<AsyncState<T>>, cfg: Arc<AppConfig>) {
+fn set_prometheus_handle() -> PrometheusHandle {
+    let prom_builder = PrometheusBuilder::new();
+    let prom_handle = prom_builder
+        .install_recorder()
+        .expect("Failed to install Prometheus recorder");
+
+    // Producer metrics
+    metrics::describe_counter!(
+        "risotto_kafka_messages_total",
+        "Total number of Kafka messages produced"
+    );
+
+    // State metrics
+    metrics::describe_gauge!("risotto_state_bgp_peers", "Number of BGP peers per router");
+    metrics::describe_gauge!(
+        "risotto_state_bgp_updates",
+        "Number of BGP updates per (router, peer)"
+    );
+    metrics::describe_gauge!(
+        "risotto_rx_updates_total",
+        "Total number of updates produced"
+    );
+
+    // Statistics metrics
+    metrics::describe_counter!(
+        "risotto_bmp_messages_total",
+        "Total number of BMP messages received"
+    );
+
+    prom_handle
+}
+
+async fn api_handler<T: StateStore>(
+    state: Option<AsyncState<T>>,
+    statistics: AsyncStatistics,
+    cfg: Arc<AppConfig>,
+    prom_handle: PrometheusHandle,
+) {
     let api_config = cfg.api.clone();
     debug!("binding api listener to {}", api_config.host);
     let api_listener = TcpListener::bind(api_config.host).await.unwrap();
 
-    let app = api::app(state);
+    let app = api::app(state, statistics, prom_handle);
     axum::serve(api_listener, app).await.unwrap();
 }
 
 async fn bmp_handler<T: StateStore>(
     state: Option<AsyncState<T>>,
+    statistics: AsyncStatistics,
     cfg: Arc<AppConfig>,
     tx: Sender<Update>,
 ) {
@@ -68,11 +108,12 @@ async fn bmp_handler<T: StateStore>(
     loop {
         let (mut bmp_stream, _) = bmp_listener.accept().await.unwrap();
         let bmp_state = state.clone();
+        let bmp_statistics = statistics.clone();
         let tx = tx.clone();
 
-        // Spawn a new task for each BMP connection
+        // Spawn a new task for the BMP connection with each router
         tokio::spawn(async move {
-            let _ = bmp::handle(&mut bmp_stream, bmp_state.clone(), tx).await;
+            let _ = bmp::handle(&mut bmp_stream, bmp_state, bmp_statistics, tx).await;
             drop(bmp_stream);
         });
     }
@@ -96,18 +137,19 @@ async fn state_handler<T: StateStore + serde::Serialize>(
 async fn main() -> Result<()> {
     let cli = Cli::parse();
     set_tracing(&cli)?;
+    let prom_handle = set_prometheus_handle();
 
     let cfg = Arc::new(app_config(&cli.config));
     let state_config = cfg.state.clone();
     let shutdown: Shutdown = Shutdown::default();
 
-    // Load state if enabled
+    // Initialize state if enabled
     let state = match state_config.enable {
         true => {
             debug!("state is enabled");
             let store = MemoryStore::new();
             let state = new_state(store);
-            state::load(state.clone(), state_config.clone());
+            state::load(state.clone(), state_config.clone()).await;
             Some(state)
         }
         false => {
@@ -116,30 +158,33 @@ async fn main() -> Result<()> {
         }
     };
 
+    // Initialize statistics
+    let statistics = new_statistics();
+
     // MPSC channel to communicate between BMP tasks and producer task
     let (tx, rx) = channel();
 
-    let api_task = shutdown.spawn_task(api_handler(state.clone(), cfg.clone()));
-    let bmp_task = shutdown.spawn_task(bmp_handler(state.clone(), cfg.clone(), tx.clone()));
+    let api_task = shutdown.spawn_task(api_handler(
+        state.clone(),
+        statistics.clone(),
+        cfg.clone(),
+        prom_handle.clone(),
+    ));
+    let bmp_task = shutdown.spawn_task(bmp_handler(
+        state.clone(),
+        statistics.clone(),
+        cfg.clone(),
+        tx.clone(),
+    ));
     let producer_task = shutdown.spawn_task(producer_handler(cfg.clone(), rx));
     let state_task = shutdown.spawn_task(state_handler(state.clone(), cfg.clone()));
 
     tokio::select! {
-        _ = shutdown.shutdown_with_limit(Duration::from_secs(1)) => {
-            info!("gracefully shutdown after shutdown signal received");
-        }
-        _ = api_task => {
-            info!("api handler shutdown");
-        }
-        _ = bmp_task => {
-            info!("bmp handler shutdown");
-        }
-        _ = producer_task => {
-            info!("producer handler shutdown");
-        }
-        _ = state_task => {
-            info!("state handler shutdown");
-        }
+        _ = shutdown.shutdown_with_limit(Duration::from_secs(1)) => {}
+        _ = api_task => {}
+        _ = bmp_task => {}
+        _ = producer_task => {}
+        _ = state_task => {}
     }
 
     Ok(())
