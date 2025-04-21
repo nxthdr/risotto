@@ -1,5 +1,6 @@
 use anyhow::Result;
 use bytes::Bytes;
+
 use std::sync::mpsc::Sender;
 use tokio::io::AsyncReadExt;
 use tokio::net::TcpStream;
@@ -8,11 +9,13 @@ use tracing::{debug, error, trace};
 use risotto_lib::process_bmp_message;
 use risotto_lib::state::AsyncState;
 use risotto_lib::state_store::store::StateStore;
+use risotto_lib::statistics::AsyncStatistics;
 use risotto_lib::update::Update;
 
 pub async fn handle<T: StateStore>(
     stream: &mut TcpStream,
     state: Option<AsyncState<T>>,
+    statistics: AsyncStatistics,
     tx: Sender<Update>,
 ) -> Result<()> {
     // Get router IP information
@@ -69,13 +72,15 @@ pub async fn handle<T: StateStore>(
         trace!("[{}]:{} - {:02x?}", router_addr, router_port, buffer);
         let mut buffer = Bytes::from(buffer);
 
-        // Process the BMP message in a separate tokio task
-        let state = state.clone();
-        let tx = tx.clone();
-        tokio::spawn({
-            async move {
-                process_bmp_message(state, tx, router_addr, router_port, &mut buffer).await;
-            }
-        });
+        // Process the BMP message
+        process_bmp_message(
+            state.clone(),
+            statistics.clone(),
+            tx.clone(),
+            router_addr,
+            router_port,
+            &mut buffer,
+        )
+        .await;
     }
 }

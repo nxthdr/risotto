@@ -26,7 +26,7 @@ Conversely, Risotto can be configured to stream updates as is to the event pipel
 
 ## Quick Start
 
-The easiest way to use risotto is using Docker.
+The easiest way to use Risotto with Docker.
 
 * Create a `risotto.yml` configuration file
 

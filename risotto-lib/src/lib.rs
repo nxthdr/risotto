@@ -1,11 +1,13 @@
 pub mod processor;
 pub mod state;
 pub mod state_store;
+pub mod statistics;
 pub mod update;
 
 use bgpkit_parser::parser::bmp::messages::BmpMessageBody;
 use bytes::Bytes;
 use core::net::IpAddr;
+use statistics::AsyncStatistics;
 use std::sync::mpsc::Sender;
 use tracing::{debug, error, info, trace};
 
@@ -18,6 +20,7 @@ use crate::update::{new_metadata, Update};
 
 pub async fn process_bmp_message<T: StateStore>(
     state: Option<AsyncState<T>>,
+    statistics: AsyncStatistics,
     tx: Sender<Update>,
     router_addr: IpAddr,
     router_port: u16,
@@ -32,22 +35,27 @@ pub async fn process_bmp_message<T: StateStore>(
         }
     };
 
+    let mut statistics_lock = statistics.lock().await;
+
     trace!("[{}]:{} - {:?}", router_addr, router_port, message);
+    statistics_lock.rx_bmp_messages += 1;
 
     // Extract header and peer information
     let metadata = new_metadata(router_addr, router_port, &message);
 
     match message.message_body {
         BmpMessageBody::InitiationMessage(body) => {
+            trace!("{:?}", body);
             let tlvs_info = body
                 .tlvs
                 .iter()
                 .map(|tlv| tlv.info.clone())
                 .collect::<Vec<_>>();
-            info!(
+            debug!(
                 "[{}]:{} - InitiationMessage: {:?}",
                 router_addr, router_port, tlvs_info
             );
+            statistics_lock.rx_bmp_initiation += 1;
             // No-Op
         }
         BmpMessageBody::PeerUpNotification(body) => {
@@ -60,10 +68,11 @@ pub async fn process_bmp_message<T: StateStore>(
                 return;
             }
             let metadata = metadata.unwrap();
-            info!(
+            debug!(
                 "[{}]:{} - PeerUpNotification - {}",
                 metadata.router_addr, metadata.router_port, metadata.peer_addr
             );
+            statistics_lock.rx_bmp_peer_up += 1;
             peer_up_notification(state, tx, metadata, body).await;
         }
         BmpMessageBody::RouteMonitoring(body) => {
@@ -76,10 +85,13 @@ pub async fn process_bmp_message<T: StateStore>(
                 return;
             }
             let metadata = metadata.unwrap();
+            statistics_lock.rx_bmp_route_monitoring += 1;
             route_monitoring(state, tx, metadata, body).await;
         }
-        BmpMessageBody::RouteMirroring(_) => {
-            info!("[{}]:{} - RouteMirroring", router_addr, router_port)
+        BmpMessageBody::RouteMirroring(body) => {
+            trace!("{:?}", body);
+            debug!("[{}]:{} - RouteMirroring", router_addr, router_port);
+            statistics_lock.rx_bmp_route_mirroring += 1;
             // No-Op
         }
         BmpMessageBody::PeerDownNotification(body) => {
@@ -92,20 +104,25 @@ pub async fn process_bmp_message<T: StateStore>(
                 return;
             }
             let metadata = metadata.unwrap();
-            info!(
+            debug!(
                 "[{}]:{} - PeerDownNotification: - {}",
                 metadata.router_addr, metadata.router_port, metadata.peer_addr
             );
+            statistics_lock.rx_bmp_peer_down += 1;
             peer_down_notification(state, tx, metadata, body).await;
         }
 
-        BmpMessageBody::TerminationMessage(_) => {
-            info!("[{}]:{} - TerminationMessage", router_addr, router_port)
+        BmpMessageBody::TerminationMessage(body) => {
+            trace!("{:?}", body);
+            info!("[{}]:{} - TerminationMessage", router_addr, router_port);
+            statistics_lock.rx_bmp_termination += 1;
             // No-Op
         }
-        BmpMessageBody::StatsReport(_) => {
-            info!("[{}]:{} - StatsReport", router_addr, router_port)
+        BmpMessageBody::StatsReport(body) => {
+            trace!("{:?}", body);
+            info!("[{}]:{} - StatsReport", router_addr, router_port);
+            statistics_lock.rx_bmp_stats_report += 1;
             // No-Op
         }
-    }
+    };
 }

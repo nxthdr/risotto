@@ -1,13 +1,10 @@
 use axum::{extract::State as AxumState, routing::get, Json, Router};
 use core::net::IpAddr;
-use metrics::{Key, Label, Recorder};
-use metrics_exporter_prometheus::PrometheusBuilder;
+use metrics::{counter, gauge, Label};
+use metrics_exporter_prometheus::PrometheusHandle;
 use serde::{Deserialize, Serialize};
 
-use risotto_lib::{state::AsyncState, state_store::store::StateStore};
-
-static METADATA: metrics::Metadata =
-    metrics::Metadata::new(module_path!(), metrics::Level::INFO, Some(module_path!()));
+use risotto_lib::{state::AsyncState, state_store::store::StateStore, statistics::AsyncStatistics};
 
 #[derive(Debug, Serialize, Deserialize)]
 struct APIRouter {
@@ -24,19 +21,30 @@ struct APIPeer {
 
 struct AppState<T: StateStore> {
     state: Option<AsyncState<T>>,
+    statistics: AsyncStatistics,
+    prom_handle: PrometheusHandle,
 }
 
 impl<T: StateStore> Clone for AppState<T> {
     fn clone(&self) -> Self {
         Self {
             state: self.state.clone(),
+            statistics: self.statistics.clone(),
+            prom_handle: self.prom_handle.clone(),
         }
     }
 }
 
-pub fn app<T: StateStore>(state: Option<AsyncState<T>>) -> Router {
-    let app_state = AppState { state };
-
+pub fn app<T: StateStore>(
+    state: Option<AsyncState<T>>,
+    statistics: AsyncStatistics,
+    prom_handle: PrometheusHandle,
+) -> Router {
+    let app_state = AppState {
+        state,
+        statistics,
+        prom_handle,
+    };
     Router::new()
         .route("/", get(root).with_state(app_state.clone()))
         .route("/metrics", get(metrics).with_state(app_state.clone()))
@@ -44,8 +52,7 @@ pub fn app<T: StateStore>(state: Option<AsyncState<T>>) -> Router {
 
 async fn format<T: StateStore>(state: AsyncState<T>) -> Vec<APIRouter> {
     let mut api_routers: Vec<APIRouter> = Vec::new();
-    let state = state.lock().unwrap();
-
+    let state = state.lock().await;
     for (router_addr, peer_addr, update_prefix) in state.get_all().unwrap() {
         // Find the router in the list of routers
         let mut router = None;
@@ -102,7 +109,7 @@ async fn format<T: StateStore>(state: AsyncState<T>) -> Vec<APIRouter> {
 }
 
 async fn root<T: StateStore>(
-    AxumState(AppState { state }): AxumState<AppState<T>>,
+    AxumState(AppState { state, .. }): AxumState<AppState<T>>,
 ) -> Json<Vec<APIRouter>> {
     match state.as_ref() {
         Some(state) => {
@@ -113,45 +120,52 @@ async fn root<T: StateStore>(
     }
 }
 
-async fn metrics<T: StateStore>(AxumState(AppState { state }): AxumState<AppState<T>>) -> String {
-    if state.is_none() {
-        return String::new();
-    }
+async fn metrics<T: StateStore>(
+    AxumState(AppState {
+        state,
+        statistics,
+        prom_handle,
+    }): AxumState<AppState<T>>,
+) -> String {
+    // Set the state metrics if enabled
+    if !state.is_none() {
+        let state = state.unwrap();
+        let api_routers = format(state).await;
 
-    let state = state.unwrap();
+        for api_router in &api_routers {
+            let labels = vec![Label::new("router", api_router.router_addr.to_string())];
+            gauge!("risotto_state_bgp_peers", labels).set(api_router.peers.len() as f64);
+        }
 
-    let recorder = PrometheusBuilder::new().build_recorder();
-    let api_routers = format(state).await;
-
-    recorder.describe_gauge(
-        "risotto_bgp_peers".into(),
-        None,
-        "Number of BGP peers per router".into(),
-    );
-    for api_router in &api_routers {
-        let labels = vec![Label::new("router", api_router.router_addr.to_string())];
-        let key = Key::from_parts("risotto_bgp_peers", labels);
-        recorder
-            .register_gauge(&key, &METADATA)
-            .set(api_router.peers.len() as f64);
-    }
-
-    recorder.describe_gauge(
-        "risotto_bgp_updates".into(),
-        None,
-        "Number of BGP updates per (router, peer)".into(),
-    );
-    for api_router in &api_routers {
-        for api_peer in &api_router.peers {
-            let total = api_peer.ipv4 + api_peer.ipv6;
-            let labels = vec![
-                Label::new("router", api_router.router_addr.to_string()),
-                Label::new("peer", api_peer.peer_addr.to_string()),
-            ];
-            let key = Key::from_parts("risotto_bgp_updates", labels);
-            recorder.register_gauge(&key, &METADATA).set(total as f64);
+        for api_router in &api_routers {
+            for api_peer in &api_router.peers {
+                let total = api_peer.ipv4 + api_peer.ipv6;
+                let labels = vec![
+                    Label::new("router", api_router.router_addr.to_string()),
+                    Label::new("peer", api_peer.peer_addr.to_string()),
+                ];
+                gauge!("risotto_state_bgp_updates", labels).set(total as f64);
+            }
         }
     }
 
-    recorder.handle().render()
+    // Set the statistics metrics
+    let statistics = statistics.lock().await;
+    let metric_name = "risotto_bmp_messages_total";
+    counter!(metric_name, vec![Label::new("type", "initiation")])
+        .absolute(statistics.rx_bmp_initiation as u64);
+    counter!(metric_name, vec![Label::new("type", "peer_up")])
+        .absolute(statistics.rx_bmp_peer_up as u64);
+    counter!(metric_name, vec![Label::new("type", "route_monitoring")])
+        .absolute(statistics.rx_bmp_route_monitoring as u64);
+    counter!(metric_name, vec![Label::new("type", "route_mirroring")])
+        .absolute(statistics.rx_bmp_route_mirroring as u64);
+    counter!(metric_name, vec![Label::new("type", "peer_down")])
+        .absolute(statistics.rx_bmp_peer_down as u64);
+    counter!(metric_name, vec![Label::new("type", "termination")])
+        .absolute(statistics.rx_bmp_termination as u64);
+    counter!(metric_name, vec![Label::new("type", "stats_report")])
+        .absolute(statistics.rx_bmp_stats_report as u64);
+
+    prom_handle.render()
 }

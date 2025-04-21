@@ -50,7 +50,7 @@ pub async fn route_monitoring<T: StateStore>(
 
     let mut legitimate_updates = Vec::new();
     if let Some(state) = &state {
-        let mut state_lock = state.lock().unwrap();
+        let mut state_lock = state.lock().await;
         for update in potential_updates {
             let is_updated = state_lock
                 .update(&metadata.router_addr.clone(), &metadata.peer_addr, &update)
@@ -80,7 +80,7 @@ pub async fn peer_down_notification<T: StateStore>(
     if let Some(state) = state {
         // Remove the peer and the associated updates from the state
         // We start by emiting synthetic withdraw updates
-        let mut state_lock = state.lock().unwrap();
+        let mut state_lock = state.lock().await;
 
         let mut synthetic_updates = Vec::new();
         let updates = state_lock

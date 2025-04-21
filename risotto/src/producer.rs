@@ -1,10 +1,11 @@
+use metrics::{counter, Label};
 use rdkafka::config::ClientConfig;
 use rdkafka::message::OwnedHeaders;
 use rdkafka::producer::{FutureProducer, FutureRecord};
 use risotto_lib::update::Update;
 use std::sync::mpsc::Receiver;
 use std::time::Duration;
-use tracing::{debug, error, info, trace};
+use tracing::{debug, error, trace};
 
 use crate::config::KafkaConfig;
 use crate::formatter::serialize_update;
@@ -108,8 +109,7 @@ pub async fn handle(config: &KafkaConfig, rx: Receiver<Update>) {
             continue;
         }
 
-        info!("sending {} updates to Kafka", n_messages);
-
+        debug!("sending {} updates to Kafka", n_messages);
         let delivery_status = producer
             .send(
                 FutureRecord::to(config.topic.as_str())
@@ -120,10 +120,18 @@ pub async fn handle(config: &KafkaConfig, rx: Receiver<Update>) {
             )
             .await;
 
+        let metric_name = "risotto_kafka_messages_total";
         match delivery_status {
-            Ok(status) => info!("{:?}", status),
+            Ok((partition, offset)) => {
+                counter!(metric_name, vec![Label::new("status", "success")]).increment(1);
+                debug!(
+                    "successfully sent message to partition {} at offset {}",
+                    partition, offset
+                );
+            }
             Err((error, _)) => {
-                error!("{}", error.to_string());
+                counter!(metric_name, vec![Label::new("status", "failed")]).increment(1);
+                error!("failed to send message: {}", error);
             }
         }
     }

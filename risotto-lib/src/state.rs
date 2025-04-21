@@ -5,8 +5,9 @@ use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::hash::{Hash, Hasher};
 use std::sync::mpsc::Sender;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::Mutex;
 use tokio::time::sleep;
 use tracing::{info, trace};
 
@@ -125,7 +126,7 @@ pub async fn peer_up_withdraws_handler<T: StateStore>(
         metadata.router_addr, metadata.router_port, metadata.peer_addr, startup, sleep_time
     );
 
-    let state_lock = state.lock().unwrap();
+    let state_lock = state.lock().await;
     let timed_prefixes = state_lock
         .store
         .get_updates_by_peer(&metadata.router_addr, &metadata.peer_addr);
@@ -149,7 +150,7 @@ pub async fn peer_up_withdraws_handler<T: StateStore>(
         synthetic_updates.len()
     );
 
-    let mut state_lock = state.lock().unwrap();
+    let mut state_lock = state.lock().await;
     for update in &mut synthetic_updates {
         trace!("{:?}", update);
 

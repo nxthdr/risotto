@@ -16,7 +16,7 @@ The `bmp.from_kafka` table is using the ClickHouse [Kafka engine](https://clickh
 * Start the environment
 
 ```sh
-docker compose up --build --force-recreate --renew-anon-volumes
+docker compose up -d --build --force-recreate --renew-anon-volumes
 ```
 
 * Check Risotto state:
