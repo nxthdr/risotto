@@ -98,7 +98,7 @@ pub async fn process_bmp_message<T: StateStore>(
             trace!("{:?}", body);
             if metadata.is_none() {
                 error!(
-                    "[{}]:{} - RouteMonitoring - no per-peer header",
+                    "[{}]:{} - PeerDownNotification - no per-peer header",
                     router_addr, router_port
                 );
                 return;

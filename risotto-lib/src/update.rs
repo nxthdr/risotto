@@ -3,7 +3,7 @@ use bgpkit_parser::models::*;
 use chrono::{DateTime, MappedLocalTime, TimeZone, Utc};
 use core::net::IpAddr;
 use std::net::Ipv4Addr;
-use tracing::error;
+use tracing::warn;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct UpdateMetadata {
@@ -81,7 +81,7 @@ pub fn decode_updates(message: RouteMonitoring, metadata: UpdateMetadata) -> Opt
             let time_bmp_header_ns = match Utc.timestamp_millis_opt(metadata.time_bmp_header_ns) {
                 MappedLocalTime::Single(dt) => dt,
                 _ => {
-                    error!(
+                    warn!(
                         "failed to parse timestamp: {}, using Utc::now()",
                         metadata.time_bmp_header_ns
                     );

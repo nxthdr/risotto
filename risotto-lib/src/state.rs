@@ -9,7 +9,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
 use tokio::time::sleep;
-use tracing::{info, trace};
+use tracing::{debug, trace};
 
 use crate::state_store::store::StateStore;
 use crate::update::{Update, UpdateMetadata};
@@ -121,7 +121,7 @@ pub async fn peer_up_withdraws_handler<T: StateStore>(
     let startup = chrono::Utc::now();
     sleep(Duration::from_secs(sleep_time)).await;
 
-    info!(
+    debug!(
         "[{}]:{} - {} - removing updates older than {} after waited {} seconds",
         metadata.router_addr, metadata.router_port, metadata.peer_addr, startup, sleep_time
     );
@@ -142,7 +142,7 @@ pub async fn peer_up_withdraws_handler<T: StateStore>(
         }
     }
 
-    info!(
+    debug!(
         "[{}]:{} - {} - emitting {} synthetic withdraw updates",
         metadata.router_addr,
         metadata.router_port,
