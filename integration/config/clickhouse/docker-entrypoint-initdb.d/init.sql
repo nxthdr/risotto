@@ -61,7 +61,7 @@ TTL date + INTERVAL 7 DAY DELETE;
 
 CREATE MATERIALIZED VIEW bmp.from_kafka_mv TO bmp.updates
 AS SELECT
-	toDate(timeReceivedNs) AS date,
+	toDate(toDateTime64(timeReceivedNs/1000000000, 9)) AS date,
 	now() AS time_inserted_ns,
 	toDateTime64(timeReceivedNs/1000000000, 9) AS time_received_ns,
 	toDateTime64(timeBmpHeaderNs/1000000000, 9) AS time_bmp_header_ns,

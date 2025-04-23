@@ -1,7 +1,7 @@
-use std::net::IpAddr;
-
 use capnp::message::Builder;
 use capnp::serialize;
+use std::net::IpAddr;
+
 use risotto_lib::update::Update;
 
 use crate::update_capnp::update;

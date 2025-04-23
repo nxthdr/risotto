@@ -92,7 +92,7 @@ pub async fn handle(config: &KafkaConfig, rx: Receiver<Update>) {
             let message = message.unwrap();
             trace!("{:?}", message);
 
-            // Format the update
+            // Serialize the update
             let message = serialize_update(&message);
 
             // Max message size is 1048576 bytes (including headers)
