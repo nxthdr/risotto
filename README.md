@@ -61,11 +61,7 @@ docker run \
     ghcr.io/nxthdr/risotto:main -c /config/risotto.yml
 ```
 
-An HTTP API provides the ability to retrieve the current state of the collector, including the list of connected routers and their BGP data.
-
-```sh
-curl -s http://localhost:3000
-```
+An Prometheus HTTP endpoint is available at `http://localhost:3000/metrics` to monitor the collector's performance and statistics.
 
 ## Contributing
 

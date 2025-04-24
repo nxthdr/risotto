@@ -1,4 +1,3 @@
-mod api;
 mod bmp;
 mod config;
 mod formatter;
@@ -9,9 +8,9 @@ mod update_capnp;
 use anyhow::Result;
 use clap::Parser;
 use clap_verbosity_flag::{InfoLevel, Verbosity};
-use config::AppConfig;
-use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
-use risotto_lib::statistics::{new_statistics, AsyncStatistics};
+use config::{APIConfig, AppConfig};
+use metrics_exporter_prometheus::PrometheusBuilder;
+use std::net::SocketAddr;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::Arc;
 use std::time::Duration;
@@ -48,11 +47,13 @@ fn set_tracing(cli: &Cli) -> Result<()> {
     Ok(())
 }
 
-fn set_prometheus_handle() -> PrometheusHandle {
+fn set_prometheus(config: &APIConfig) {
+    let socket = config.host.parse::<SocketAddr>().unwrap();
     let prom_builder = PrometheusBuilder::new();
-    let prom_handle = prom_builder
-        .install_recorder()
-        .expect("Failed to install Prometheus recorder");
+    prom_builder
+        .with_http_listener(socket)
+        .install()
+        .expect("Failed to install Prometheus metrics exporter");
 
     // Producer metrics
     metrics::describe_counter!(
@@ -61,14 +62,11 @@ fn set_prometheus_handle() -> PrometheusHandle {
     );
 
     // State metrics
-    metrics::describe_gauge!("risotto_state_bgp_peers", "Number of BGP peers per router");
+    metrics::describe_counter!("risotto_state_dump_total", "Total number of state dumps");
+    metrics::describe_gauge!("risotto_peer_established", "Peer established for a router");
     metrics::describe_gauge!(
-        "risotto_state_bgp_updates",
-        "Number of BGP updates per (router, peer)"
-    );
-    metrics::describe_gauge!(
-        "risotto_rx_updates_total",
-        "Total number of updates produced"
+        "risotto_state_updates",
+        "Number of BGP updates in the state"
     );
 
     // Statistics metrics
@@ -76,27 +74,18 @@ fn set_prometheus_handle() -> PrometheusHandle {
         "risotto_bmp_messages_total",
         "Total number of BMP messages received"
     );
-
-    prom_handle
-}
-
-async fn api_handler<T: StateStore>(
-    state: Option<AsyncState<T>>,
-    statistics: AsyncStatistics,
-    cfg: Arc<AppConfig>,
-    prom_handle: PrometheusHandle,
-) {
-    let api_config = cfg.api.clone();
-    debug!("binding api listener to {}", api_config.host);
-    let api_listener = TcpListener::bind(api_config.host).await.unwrap();
-
-    let app = api::app(state, statistics, prom_handle);
-    axum::serve(api_listener, app).await.unwrap();
+    metrics::describe_counter!(
+        "risotto_rx_updates_total",
+        "Total number of BGP updates received"
+    );
+    metrics::describe_counter!(
+        "risotto_tx_updates_total",
+        "Total number of BGP updates sent"
+    );
 }
 
 async fn bmp_handler<T: StateStore>(
     state: Option<AsyncState<T>>,
-    statistics: AsyncStatistics,
     cfg: Arc<AppConfig>,
     tx: Sender<Update>,
 ) {
@@ -108,12 +97,11 @@ async fn bmp_handler<T: StateStore>(
     loop {
         let (mut bmp_stream, _) = bmp_listener.accept().await.unwrap();
         let bmp_state = state.clone();
-        let bmp_statistics = statistics.clone();
         let tx = tx.clone();
 
         // Spawn a new task for the BMP connection with each router
         tokio::spawn(async move {
-            let _ = bmp::handle(&mut bmp_stream, bmp_state, bmp_statistics, tx).await;
+            let _ = bmp::handle(&mut bmp_stream, bmp_state, tx).await;
             drop(bmp_stream);
         });
     }
@@ -137,9 +125,10 @@ async fn state_handler<T: StateStore + serde::Serialize>(
 async fn main() -> Result<()> {
     let cli = Cli::parse();
     set_tracing(&cli)?;
-    let prom_handle = set_prometheus_handle();
 
     let cfg = Arc::new(app_config(&cli.config));
+    set_prometheus(&cfg.api.clone());
+
     let state_config = cfg.state.clone();
     let shutdown: Shutdown = Shutdown::default();
 
@@ -158,30 +147,15 @@ async fn main() -> Result<()> {
         }
     };
 
-    // Initialize statistics
-    let statistics = new_statistics();
-
     // MPSC channel to communicate between BMP tasks and producer task
     let (tx, rx) = channel();
 
-    let api_task = shutdown.spawn_task(api_handler(
-        state.clone(),
-        statistics.clone(),
-        cfg.clone(),
-        prom_handle.clone(),
-    ));
-    let bmp_task = shutdown.spawn_task(bmp_handler(
-        state.clone(),
-        statistics.clone(),
-        cfg.clone(),
-        tx.clone(),
-    ));
+    let bmp_task = shutdown.spawn_task(bmp_handler(state.clone(), cfg.clone(), tx.clone()));
     let producer_task = shutdown.spawn_task(producer_handler(cfg.clone(), rx));
     let state_task = shutdown.spawn_task(state_handler(state.clone(), cfg.clone()));
 
     tokio::select! {
         _ = shutdown.shutdown_with_limit(Duration::from_secs(1)) => {}
-        _ = api_task => {}
         _ = bmp_task => {}
         _ = producer_task => {}
         _ = state_task => {}

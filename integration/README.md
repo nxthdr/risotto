@@ -1,15 +1,26 @@
 # Integration tests
 
-The integration tests setup consists in two [gobgp](https://github.com/osrg/gobgp) routers peering together.
-Check out the [routers](./config/gobgp/) and [Risotto](./config/risotto/) configuration.
+This setup provides an environment for integration testing of Risotto's BMP message processing and Kafka production capabilities.
 
-In the [tests](./tests/) folder you can find the test cases that are run against the setup.
+**Components:**
 
-Both routers are configured to send BMP messages to the Risotto instance accessible at the bridge IP address `10.0.0.100`.
-Risotto sends the BMP messages to a Redpanda instance.
+*   **BGP Routers:**
+    *   Two [GoBGP](https://github.com/osrg/gobgp) instances configured to peer with each other.
+    *   Two [BIRD](https://bird.network.cz/) instances configured to peer and exchange routes with each other.
+*   **Risotto:** The instance under test, listening for BMP messages.
+*   **Redpanda:** A Kafka instance serving as the message broker for updates produced by Risotto.
+*   **ClickHouse:** A database used to consume and store the messages from Redpanda.
 
-The `bmp.from_kafka` table is using the ClickHouse [Kafka engine](https://clickhouse.com/docs/en/engines/table-engines/integrations/kafka) to fetch the results from Redpanda. The `bmp.updates` table is used to store the results.
+**Data Flow:**
 
+1.  All four routers (GoBGP and BIRD) send their BMP messages to the Risotto instance (`10.0.0.100`).
+2.  Risotto processes these BMP messages and produces the resulting updates to a topic in Redpanda.
+3.  ClickHouse uses a table based on the [Kafka engine](https://clickhouse.com/docs/en/engines/table-engines/integrations/kafka) (`bmp.from_kafka`) to read messages from the Redpanda topic. The consumed data is then inserted into a storage table (`bmp.updates`) for analysis and verification.
+
+**Test Scenarios:**
+
+*   The initial configuration tests basic BMP message reception (session establishment, etc.) from GoBGP and the processing of route exchanges from BIRD.
+*   Additional test scenarios, located in the [`./tests/`](./tests/) directory, can be applied to dynamically modify the GoBGP routers' configuration (e.g., announcing or withdrawing routes) to test specific Risotto use cases.
 
 ## Usage
 
@@ -17,12 +28,6 @@ The `bmp.from_kafka` table is using the ClickHouse [Kafka engine](https://clickh
 
 ```sh
 docker compose up -d --build --force-recreate --renew-anon-volumes
-```
-
-* Check Risotto state:
-
-```sh
-curl -s http://127.0.0.1:3000 |jq
 ```
 
 * Check Prometheus metrics
