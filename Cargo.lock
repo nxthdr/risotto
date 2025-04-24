@@ -2164,6 +2164,7 @@ dependencies = [
  "bgpkit-parser",
  "bytes",
  "chrono",
+ "metrics",
  "rand 0.9.1",
  "serde",
  "tokio",

@@ -1,11 +1,22 @@
 use std::net::IpAddr;
 
-use crate::state::{RouterPeerUpdate, TimedPrefix};
+use crate::state::TimedPrefix;
 use crate::update::Update;
 
 pub trait StateStore: Send + Sync + 'static {
-    fn get_all(&self) -> Vec<RouterPeerUpdate>;
+    // Get the updates for a specific router and peer fron the state
+    // Useful for crafting synthetic withdraws
     fn get_updates_by_peer(&self, router_addr: &IpAddr, peer_addr: &IpAddr) -> Vec<TimedPrefix>;
+
+    // Add a peer for a given router in the state
+    // If called multiple times, it must not add the peer again
+    fn add_peer(&mut self, router_addr: &IpAddr, peer_addr: &IpAddr);
+
+    // Remove a peer for a given router in the state
+    // If must remove all updates associated with the router and peer
     fn remove_peer(&mut self, router_addr: &IpAddr, peer_addr: &IpAddr);
+
+    // Update the state with a new update
+    // If the update should be emited downstream, the function must return true, else false
     fn update(&mut self, router_addr: &IpAddr, peer_addr: &IpAddr, update: &Update) -> bool;
 }

@@ -1,8 +1,8 @@
 use anyhow::Result;
 use chrono::Utc;
 use core::net::IpAddr;
+use metrics::{counter, gauge};
 use serde::{Deserialize, Serialize};
-use std::error::Error;
 use std::hash::{Hash, Hasher};
 use std::sync::mpsc::Sender;
 use std::sync::Arc;
@@ -12,7 +12,7 @@ use tokio::time::sleep;
 use tracing::{debug, trace};
 
 use crate::state_store::store::StateStore;
-use crate::update::{Update, UpdateMetadata};
+use crate::update::{map_to_ipv6, Update, UpdateMetadata};
 
 pub type AsyncState<T> = Arc<Mutex<State<T>>>;
 pub type RouterPeerUpdate = (IpAddr, IpAddr, TimedPrefix);
@@ -30,12 +30,6 @@ impl<T: StateStore> State<T> {
         State { store }
     }
 
-    // Get all the updates from the state
-    pub fn get_all(&self) -> Result<Vec<RouterPeerUpdate>> {
-        Ok(self.store.get_all())
-    }
-
-    // Get the updates for a specific router and peer
     pub fn get_updates_by_peer(
         &self,
         router_addr: &IpAddr,
@@ -44,20 +38,45 @@ impl<T: StateStore> State<T> {
         Ok(self.store.get_updates_by_peer(router_addr, peer_addr))
     }
 
-    // Remove all updates for a specific router and peer
-    pub fn remove_updates(&mut self, router_addr: &IpAddr, peer_addr: &IpAddr) -> Result<()> {
-        self.store.remove_peer(router_addr, peer_addr);
+    pub fn add_peer(&mut self, router_addr: &IpAddr, peer_addr: &IpAddr) -> Result<()> {
+        self.store.add_peer(router_addr, peer_addr);
+        gauge!(
+            "risotto_state_updates",
+            "router" => router_addr.to_string(),
+            "peer" => peer_addr.to_string()
+        )
+        .set(0);
         Ok(())
     }
 
-    // Update the state with a new update
+    pub fn remove_peer(&mut self, router_addr: &IpAddr, peer_addr: &IpAddr) -> Result<()> {
+        self.store.remove_peer(router_addr, peer_addr);
+        gauge!(
+            "risotto_state_updates",
+            "router" => router_addr.to_string(),
+            "peer" => peer_addr.to_string()
+        )
+        .set(0);
+        Ok(())
+    }
+
     pub fn update(
         &mut self,
         router_addr: &IpAddr,
         peer_addr: &IpAddr,
         update: &Update,
-    ) -> Result<bool, Box<dyn Error>> {
-        Ok(self.store.update(router_addr, &peer_addr, update))
+    ) -> Result<bool> {
+        let emit = self.store.update(router_addr, &peer_addr, update);
+        if emit {
+            let delta = if update.announced { 1.0 } else { -1.0 };
+            gauge!(
+                "risotto_state_updates",
+                "router" => router_addr.to_string(),
+                "peer" => peer_addr.to_string()
+            )
+            .increment(delta);
+        }
+        Ok(emit)
     }
 }
 
@@ -92,12 +111,12 @@ pub fn synthesize_withdraw_update(prefix: TimedPrefix, metadata: UpdateMetadata)
     Update {
         time_received_ns: Utc::now(),
         time_bmp_header_ns: Utc::now(),
-        router_addr: metadata.router_addr,
+        router_addr: map_to_ipv6(metadata.router_addr),
         router_port: metadata.router_port,
-        peer_addr: metadata.peer_addr,
+        peer_addr: map_to_ipv6(metadata.peer_addr),
         peer_bgp_id: metadata.peer_bgp_id,
         peer_asn: metadata.peer_asn,
-        prefix_addr: prefix.prefix_addr,
+        prefix_addr: map_to_ipv6(prefix.prefix_addr),
         prefix_len: prefix.prefix_len,
         is_post_policy: prefix.is_post_policy,
         is_adj_rib_out: prefix.is_adj_rib_out,
@@ -149,6 +168,13 @@ pub async fn peer_up_withdraws_handler<T: StateStore>(
         metadata.peer_addr,
         synthetic_updates.len()
     );
+
+    counter!(
+        "risotto_tx_updates_total",
+        "router" => metadata.router_addr.to_string(),
+        "peer" => metadata.peer_addr.to_string(),
+    )
+    .increment(synthetic_updates.len() as u64);
 
     let mut state_lock = state.lock().await;
     for update in &mut synthetic_updates {

@@ -62,9 +62,9 @@ async fn test_route_monitoring() {
     tests.push((
         UpdateMetadata {
             time_bmp_header_ns: 0,
-            router_addr: IpAddr::from_str("192.0.1.0").unwrap(),
+            router_addr: IpAddr::from_str("::ffff:192.0.1.0").unwrap(),
             router_port: 179,
-            peer_addr: IpAddr::from_str("192.0.2.0").unwrap(),
+            peer_addr: IpAddr::from_str("::ffff:192.0.2.0").unwrap(),
             peer_bgp_id: Ipv4Addr::from_str("192.0.2.0").unwrap(),
             peer_asn: 65000,
             is_post_policy: false,
@@ -85,9 +85,9 @@ async fn test_route_monitoring() {
         vec![Update {
             time_received_ns: DateTime::from_timestamp(0, 0).unwrap(),
             time_bmp_header_ns: DateTime::from_timestamp(0, 0).unwrap(),
-            router_addr: IpAddr::from_str("192.0.1.0").unwrap(),
+            router_addr: IpAddr::from_str("::ffff:192.0.1.0").unwrap(),
             router_port: 179,
-            peer_addr: IpAddr::from_str("192.0.2.0").unwrap(),
+            peer_addr: IpAddr::from_str("::ffff:192.0.2.0").unwrap(),
             peer_bgp_id: Ipv4Addr::from_str("192.0.2.0").unwrap(),
             peer_asn: 65000,
             prefix_addr: IpAddr::from_str("::ffff:10.0.1.0").unwrap(),

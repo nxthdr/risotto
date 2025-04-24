@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::net::IpAddr;
 
-use crate::state::{RouterPeerUpdate, TimedPrefix};
+use crate::state::TimedPrefix;
 use crate::state_store::store::StateStore;
 use crate::update::Update;
 
@@ -25,18 +25,6 @@ impl MemoryStore {
 }
 
 impl StateStore for MemoryStore {
-    fn get_all(&self) -> Vec<RouterPeerUpdate> {
-        let mut res = Vec::new();
-        for (router_addr, router) in &self.routers {
-            for (peer_addr, peer) in &router.peers {
-                for update in &peer.updates {
-                    res.push((*router_addr, *peer_addr, update.clone()));
-                }
-            }
-        }
-        res
-    }
-
     fn get_updates_by_peer(&self, router_addr: &IpAddr, peer_addr: &IpAddr) -> Vec<TimedPrefix> {
         let router_binding = Router::new();
         let router = self.routers.get(router_addr).unwrap_or(&router_binding);
@@ -46,6 +34,11 @@ impl StateStore for MemoryStore {
         };
 
         peer.updates.iter().cloned().collect()
+    }
+
+    fn add_peer(&mut self, router_addr: &IpAddr, peer_addr: &IpAddr) {
+        let router = self._get_router(router_addr);
+        router.add_peer(peer_addr);
     }
 
     fn remove_peer(&mut self, router_addr: &IpAddr, peer_addr: &IpAddr) {

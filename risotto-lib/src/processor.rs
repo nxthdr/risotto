@@ -3,6 +3,7 @@ use bgpkit_parser::bmp::messages::{PeerDownNotification, PeerUpNotification, Rou
 use bgpkit_parser::parse_bmp_msg;
 use bgpkit_parser::parser::bmp::messages::BmpMessage;
 use bytes::Bytes;
+use metrics::{counter, gauge};
 use rand::Rng;
 use std::sync::mpsc::Sender;
 use tracing::trace;
@@ -27,8 +28,22 @@ pub async fn peer_up_notification<T: StateStore>(
     metadata: UpdateMetadata,
     _: PeerUpNotification,
 ) {
-    if let Some(spawn_state) = state {
-        let spawn_state = spawn_state.clone();
+    if let Some(state) = state {
+        let mut state_lock = state.lock().await;
+
+        // Add the peer to the state
+        state_lock
+            .add_peer(&metadata.router_addr, &metadata.peer_addr)
+            .unwrap();
+
+        gauge!(
+            "risotto_peer_established",
+            "router" => metadata.router_addr.to_string(),
+            "peer" => metadata.peer_addr.to_string()
+        )
+        .set(1);
+
+        let spawn_state = state.clone();
         let random = {
             let mut rng = rand::rng();
             rng.random_range(-60.0..60.0) as u64
@@ -47,6 +62,12 @@ pub async fn route_monitoring<T: StateStore>(
     body: RouteMonitoring,
 ) {
     let potential_updates = decode_updates(body, metadata.clone()).unwrap_or_default();
+    counter!(
+        "risotto_rx_updates_total",
+        "router" => metadata.router_addr.to_string(),
+        "peer" => metadata.peer_addr.to_string(),
+    )
+    .increment(potential_updates.len() as u64);
 
     let mut legitimate_updates = Vec::new();
     if let Some(state) = &state {
@@ -62,6 +83,13 @@ pub async fn route_monitoring<T: StateStore>(
     } else {
         legitimate_updates = potential_updates;
     }
+
+    counter!(
+        "risotto_tx_updates_total",
+        "router" => metadata.router_addr.to_string(),
+        "peer" => metadata.peer_addr.to_string(),
+    )
+    .increment(legitimate_updates.len() as u64);
 
     for update in legitimate_updates {
         trace!("{:?}", update);
@@ -90,10 +118,24 @@ pub async fn peer_down_notification<T: StateStore>(
             synthetic_updates.push(synthesize_withdraw_update(prefix.clone(), metadata.clone()));
         }
 
-        // Then update the state
+        // Remove the peer from the state
         state_lock
-            .remove_updates(&metadata.router_addr, &metadata.peer_addr)
+            .remove_peer(&metadata.router_addr, &metadata.peer_addr)
             .unwrap();
+
+        gauge!(
+            "risotto_peer_established",
+            "router" => metadata.router_addr.to_string(),
+            "peer" => metadata.peer_addr.to_string()
+        )
+        .set(0);
+
+        counter!(
+            "risotto_tx_updates_total",
+            "router" => metadata.router_addr.to_string(),
+            "peer" => metadata.peer_addr.to_string(),
+        )
+        .increment(synthetic_updates.len() as u64);
 
         for update in synthetic_updates {
             trace!("{:?}", update);

@@ -1,8 +1,9 @@
+use metrics::counter;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use tokio::fs::{rename, File};
 use tokio::time::sleep;
-use tracing::debug;
+use tracing::trace;
 
 use risotto_lib::state::AsyncState;
 use risotto_lib::state_store::store::StateStore;
@@ -41,8 +42,9 @@ pub async fn dump_handler<T: StateStore + Serialize>(
         // TODO do not spawn this task if state is disabled
         sleep(Duration::from_secs(cfg.interval)).await;
         if let Some(ref state) = state {
-            debug!("dumping state to {}", cfg.path);
+            trace!("dumping state to {}", cfg.path);
             dump(state.clone(), cfg.clone()).await;
+            counter!("risotto_state_dump_total").increment(1);
         }
     }
 }

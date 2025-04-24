@@ -1,4 +1,5 @@
 services:
+  # GoBGP
   gobgp10:
     image: jauderho/gobgp:latest
     command: gobgpd --config-file /etc/gobgp/gobgp.toml
@@ -9,8 +10,7 @@ services:
       integration:
         ipv4_address: 10.0.0.10
     depends_on:
-      - redpanda
-      - clickhouse
+      - risotto
 
   gobgp20:
     image: jauderho/gobgp:latest
@@ -22,8 +22,42 @@ services:
       integration:
         ipv4_address: 10.0.0.20
     depends_on:
+      - risotto
+
+  # Bird
+  bird30:
+    image: ghcr.io/nxthdr/bird:2.16
+    volumes:
+      - ./config/bird/bird30.conf:/etc/bird/bird.conf:ro
+    networks:
+      integration:
+        ipv4_address: 10.0.0.30
+    depends_on:
+      - risotto
+
+  bird40:
+    image: ghcr.io/nxthdr/bird:2.16
+    volumes:
+      - ./config/bird/bird40.conf:/etc/bird/bird.conf:ro
+    networks:
+      integration:
+        ipv4_address: 10.0.0.40
+    depends_on:
+      - risotto
+
+  # Pipeline
+  risotto:
+    build: ..
+    command: -v --config /config/risotto.yml
+    volumes:
+      - ./config/risotto/risotto.yml:/config/risotto.yml
+    ports:
+      - "3000:3000"
+    networks:
+      integration:
+        ipv4_address: 10.0.0.99
+    depends_on:
       - redpanda
-      - clickhouse
 
   redpanda:
     image: redpandadata/redpanda:latest
@@ -44,20 +78,6 @@ services:
         ipv4_address: 10.0.0.200
     depends_on:
       - redpanda
-
-  risotto:
-    build: ..
-    command: -v --config /config/risotto.yml
-    volumes:
-      - ./config/risotto/risotto.yml:/config/risotto.yml
-    ports:
-      - "3000:3000"
-    networks:
-      integration:
-        ipv4_address: 10.0.0.99
-    depends_on:
-      - redpanda
-      - clickhouse
 
 networks:
   integration:

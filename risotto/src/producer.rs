@@ -1,4 +1,4 @@
-use metrics::{counter, Label};
+use metrics::counter;
 use rdkafka::config::ClientConfig;
 use rdkafka::message::OwnedHeaders;
 use rdkafka::producer::{FutureProducer, FutureRecord};
@@ -123,14 +123,14 @@ pub async fn handle(config: &KafkaConfig, rx: Receiver<Update>) {
         let metric_name = "risotto_kafka_messages_total";
         match delivery_status {
             Ok((partition, offset)) => {
-                counter!(metric_name, vec![Label::new("status", "success")]).increment(1);
+                counter!(metric_name, "status" => "success").increment(1);
                 debug!(
                     "successfully sent message to partition {} at offset {}",
                     partition, offset
                 );
             }
             Err((error, _)) => {
-                counter!(metric_name, vec![Label::new("status", "failed")]).increment(1);
+                counter!(metric_name, "status" => "failure").increment(1);
                 error!("failed to send message: {}", error);
             }
         }

@@ -2,7 +2,7 @@ use bgpkit_parser::bmp::messages::{BmpMessage, PerPeerFlags, RouteMonitoring};
 use bgpkit_parser::models::*;
 use chrono::{DateTime, MappedLocalTime, TimeZone, Utc};
 use core::net::IpAddr;
-use std::net::Ipv4Addr;
+use std::net::{Ipv4Addr, SocketAddr};
 use tracing::warn;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -93,9 +93,9 @@ pub fn decode_updates(message: RouteMonitoring, metadata: UpdateMetadata) -> Opt
                 updates.push(Update {
                     time_received_ns: Utc::now(),
                     time_bmp_header_ns,
-                    router_addr: metadata.router_addr,
+                    router_addr: map_to_ipv6(metadata.router_addr),
                     router_port: metadata.router_port,
-                    peer_addr: metadata.peer_addr,
+                    peer_addr: map_to_ipv6(metadata.peer_addr),
                     peer_bgp_id: metadata.peer_bgp_id,
                     peer_asn: metadata.peer_asn,
                     prefix_addr: map_to_ipv6(prefix.prefix.addr()),
@@ -119,11 +119,7 @@ pub fn decode_updates(message: RouteMonitoring, metadata: UpdateMetadata) -> Opt
     }
 }
 
-pub fn new_metadata(
-    router_addr: IpAddr,
-    router_port: u16,
-    message: &BmpMessage,
-) -> Option<UpdateMetadata> {
+pub fn new_metadata(socket: SocketAddr, message: &BmpMessage) -> Option<UpdateMetadata> {
     // Get peer information
     let Some(pph) = message.per_peer_header else {
         return None;
@@ -145,8 +141,8 @@ pub fn new_metadata(
 
     Some(UpdateMetadata {
         time_bmp_header_ns,
-        router_addr,
-        router_port,
+        router_addr: map_to_ipv6(socket.ip()),
+        router_port: socket.port(),
         peer_addr: map_to_ipv6(peer.peer_address),
         peer_bgp_id: peer.peer_bgp_id,
         peer_asn: peer.peer_asn.to_u32(),
@@ -197,7 +193,7 @@ pub fn new_communities(communities: &[MetaCommunity]) -> Vec<(u32, u16)> {
     constructed_communities
 }
 
-fn map_to_ipv6(ip: IpAddr) -> IpAddr {
+pub fn map_to_ipv6(ip: IpAddr) -> IpAddr {
     if ip.is_ipv4() {
         format!("::ffff:{}", ip).parse().unwrap()
     } else {
