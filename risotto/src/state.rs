@@ -16,7 +16,7 @@ pub async fn dump<T: StateStore + Serialize>(state: AsyncState<T>, cfg: StateCon
     let state_lock = state.lock().await;
     let temp_path = format!("{}.tmp", cfg.path);
 
-    match bincode::serialize(&state_lock.store) {
+    match bincode::serde::encode_to_vec(&state_lock.store, bincode::config::legacy()) {
         Ok(encoded) => {
             match File::create(&temp_path).await {
                 Ok(mut file) => {
@@ -63,31 +63,33 @@ pub async fn load<T: StateStore + for<'de> Deserialize<'de>>(
 ) {
     debug!("Attempting to load state from {}", cfg.path);
     match tokio::fs::read(&cfg.path).await {
-        Ok(encoded) => match bincode::deserialize::<T>(&encoded) {
-            Ok(store) => {
-                debug!("Successfully deserialized state from {}", cfg.path);
-                debug!("Initializing state metrics from loaded data...");
+        Ok(encoded) => {
+            match bincode::serde::decode_from_slice::<T, _>(&encoded, bincode::config::legacy()) {
+                Ok((store, _)) => {
+                    debug!("Successfully deserialized state from {}", cfg.path);
+                    debug!("Initializing state metrics from loaded data...");
 
-                let peers = store.get_peers();
-                for (router_addr, peer_addr) in peers {
-                    let updates = store.get_updates_by_peer(&router_addr, &peer_addr);
-                    gauge!("risotto_state_updates", "router" => router_addr.to_string(), "peer" => peer_addr.to_string()).set(updates.len() as f64);
+                    let peers = store.get_peers();
+                    for (router_addr, peer_addr) in peers {
+                        let updates = store.get_updates_by_peer(&router_addr, &peer_addr);
+                        gauge!("risotto_state_updates", "router" => router_addr.to_string(), "peer" => peer_addr.to_string()).set(updates.len() as f64);
+                    }
+
+                    let mut state_lock = state.lock().await;
+                    state_lock.store = store;
+                    info!("State loaded and metrics initialized successfully.");
                 }
-
-                let mut state_lock = state.lock().await;
-                state_lock.store = store;
-                info!("State loaded and metrics initialized successfully.");
+                Err(e) => {
+                    error!(
+                        "Failed to deserialize state from {} using bincode: {}",
+                        cfg.path, e
+                    );
+                    let backup_path = format!("{}.corrupted-{}", cfg.path, Utc::now().timestamp());
+                    warn!("Renaming corrupted state file to {}", backup_path);
+                    let _ = rename(&cfg.path, backup_path).await;
+                }
             }
-            Err(e) => {
-                error!(
-                    "Failed to deserialize state from {} using bincode: {}",
-                    cfg.path, e
-                );
-                let backup_path = format!("{}.corrupted-{}", cfg.path, Utc::now().timestamp());
-                warn!("Renaming corrupted state file to {}", backup_path);
-                let _ = rename(&cfg.path, backup_path).await;
-            }
-        },
+        }
         Err(e) => {
             if e.kind() == std::io::ErrorKind::NotFound {
                 info!(
