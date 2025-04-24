@@ -5,8 +5,8 @@ pub mod update;
 
 use bgpkit_parser::parser::bmp::messages::BmpMessageBody;
 use bytes::Bytes;
-use core::net::SocketAddr;
 use metrics::counter;
+use std::net::SocketAddr;
 use std::sync::mpsc::Sender;
 use tracing::{debug, error, trace};
 
@@ -32,9 +32,9 @@ pub async fn process_bmp_message<T: StateStore>(
         }
     };
 
-    let metric_name = "risotto_bmp_messages_total";
-
     trace!("{} - {:?}", socket, message);
+
+    let metric_name = "risotto_bmp_messages_total";
     counter!(metric_name, "router" => socket.to_string().clone()).increment(1);
 
     // Extract header and peer information
@@ -82,9 +82,13 @@ pub async fn process_bmp_message<T: StateStore>(
                 return;
             }
             let metadata = metadata.unwrap();
-            counter!(metric_name, "router" =>  socket.to_string(), "type" => "route_monitoring")
+            // We do not process the message if the peer address is unspecified
+            // Most likely a local RIB update
+            if !metadata.peer_addr.is_unspecified() {
+                counter!(metric_name, "router" =>  socket.to_string(), "type" => "route_monitoring")
                 .increment(1);
-            route_monitoring(state, tx, metadata, body).await;
+                route_monitoring(state, tx, metadata, body).await;
+            }
         }
         BmpMessageBody::RouteMirroring(body) => {
             trace!("{}: {:?}", socket.to_string(), body);

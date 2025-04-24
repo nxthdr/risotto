@@ -6,7 +6,7 @@
     [bmp-servers.config]
         address = "10.0.0.99"
         port = 4000
-        route-monitoring-policy = "pre-policy"
+        route-monitoring-policy = "all"
         statistics-timeout = 600
 
 [[neighbors]]
