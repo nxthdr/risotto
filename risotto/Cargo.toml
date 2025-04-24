@@ -23,7 +23,7 @@ config = "0.15.4"
 metrics = "0.24.1"
 metrics-exporter-prometheus = "0.17.0"
 rdkafka = "0.37.0"
-risotto-lib = { path = "../risotto-lib", version = "0.2.0" }
+risotto-lib = { path = "../risotto-lib", version = "0.3.0" }
 serde = { version = "1.0.217", features = ["derive"] }
 tokio = { version = "1.42.0", features = ["full"] }
 tokio-graceful = "0.2.2"
