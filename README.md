@@ -47,7 +47,7 @@ kafka:
 
 state:
   enable: true
-  path: /app/dump.json
+  path: /app/dump.bin
   save_interval: 10
 ```
 

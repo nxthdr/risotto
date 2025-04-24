@@ -146,7 +146,7 @@ pub fn get_state_config(config: &Config) -> StateConfig {
         enable: config.get_bool("state.enable").unwrap_or(true),
         path: config
             .get_string("state.path")
-            .unwrap_or("state.json".to_string()),
+            .unwrap_or("state.bin".to_string()),
         interval: config.get_int("state.save_interval").unwrap_or(10) as u64,
     }
 }

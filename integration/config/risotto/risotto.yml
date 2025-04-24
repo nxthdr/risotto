@@ -14,5 +14,5 @@ kafka:
 
 state:
   enable: true
-  path: /app/state.json
+  path: /app/state/state.bin
   save_interval: 10
