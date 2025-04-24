@@ -34,12 +34,10 @@ pub async fn process_bmp_message<T: StateStore>(
 
     trace!("{} - {:?}", socket, message);
 
-    let metric_name = "risotto_bmp_messages_total";
-    counter!(metric_name, "router" => socket.ip().to_string()).increment(1);
-
     // Extract header and peer information
     let metadata = new_metadata(socket.clone(), &message);
 
+    let metric_name = "risotto_bmp_messages_total";
     match message.message_body {
         BmpMessageBody::InitiationMessage(body) => {
             trace!("{}: {:?}", socket.to_string(), body);
