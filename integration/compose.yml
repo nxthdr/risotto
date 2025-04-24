@@ -51,7 +51,6 @@ services:
     command: -v --config /config/risotto.yml
     volumes:
       - ./config/risotto/risotto.yml:/config/risotto.yml
-      - ./config/risotto/state/:/app/state/
     ports:
       - "3000:3000"
     networks:
