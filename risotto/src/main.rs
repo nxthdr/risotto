@@ -63,11 +63,12 @@ fn set_prometheus(config: &APIConfig) {
 
     // State metrics
     metrics::describe_counter!("risotto_state_dump_total", "Total number of state dumps");
-    metrics::describe_gauge!("risotto_peer_established", "Peer established for a router");
-    metrics::describe_gauge!(
-        "risotto_state_updates",
-        "Number of BGP updates in the state"
+    metrics::describe_counter!(
+        "risotto_state_dump_duration_seconds",
+        "Duration of state dump in seconds"
     );
+    metrics::describe_gauge!("risotto_peer_established", "Peer established for a router");
+    metrics::describe_gauge!("risotto_state_updates", "Number of updates in the state");
 
     // Statistics metrics
     metrics::describe_counter!(
@@ -76,11 +77,11 @@ fn set_prometheus(config: &APIConfig) {
     );
     metrics::describe_counter!(
         "risotto_rx_updates_total",
-        "Total number of BGP updates received"
+        "Total number of updates received"
     );
     metrics::describe_counter!(
         "risotto_tx_updates_total",
-        "Total number of BGP updates sent"
+        "Total number of updates transmitted"
     );
 }
 

@@ -40,12 +40,6 @@ impl<T: StateStore> State<T> {
 
     pub fn add_peer(&mut self, router_addr: &IpAddr, peer_addr: &IpAddr) -> Result<()> {
         self.store.add_peer(router_addr, peer_addr);
-        gauge!(
-            "risotto_state_updates",
-            "router" => router_addr.to_string(),
-            "peer" => peer_addr.to_string()
-        )
-        .set(0);
         Ok(())
     }
 

@@ -25,6 +25,26 @@ impl MemoryStore {
 }
 
 impl StateStore for MemoryStore {
+    fn add_peer(&mut self, router_addr: &IpAddr, peer_addr: &IpAddr) {
+        let router = self._get_router(router_addr);
+        router.add_peer(peer_addr);
+    }
+
+    fn remove_peer(&mut self, router_addr: &IpAddr, peer_addr: &IpAddr) {
+        let router = self._get_router(router_addr);
+        router.remove_peer(peer_addr);
+    }
+
+    fn get_peers(&self) -> Vec<(IpAddr, IpAddr)> {
+        let mut peers = Vec::new();
+        for (router_addr, router) in &self.routers {
+            for peer_addr in router.peers.keys() {
+                peers.push((*router_addr, *peer_addr));
+            }
+        }
+        peers
+    }
+
     fn get_updates_by_peer(&self, router_addr: &IpAddr, peer_addr: &IpAddr) -> Vec<TimedPrefix> {
         let router_binding = Router::new();
         let router = self.routers.get(router_addr).unwrap_or(&router_binding);
@@ -34,16 +54,6 @@ impl StateStore for MemoryStore {
         };
 
         peer.updates.iter().cloned().collect()
-    }
-
-    fn add_peer(&mut self, router_addr: &IpAddr, peer_addr: &IpAddr) {
-        let router = self._get_router(router_addr);
-        router.add_peer(peer_addr);
-    }
-
-    fn remove_peer(&mut self, router_addr: &IpAddr, peer_addr: &IpAddr) {
-        let router = self._get_router(router_addr);
-        router.remove_peer(peer_addr);
     }
 
     fn update(&mut self, router_addr: &IpAddr, peer_addr: &IpAddr, update: &Update) -> bool {
