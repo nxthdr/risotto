@@ -7,7 +7,7 @@
         address = "10.0.0.99"
         port = 4000
         route-monitoring-policy = "pre-policy"
-        statistics-timeout = 60
+        statistics-timeout = 600
 
 [[neighbors]]
     [neighbors.config]

@@ -9,6 +9,7 @@ use risotto_lib::state::AsyncState;
 use risotto_lib::state_store::store::StateStore;
 
 use crate::config::StateConfig;
+
 pub async fn dump<T: StateStore + Serialize>(state: AsyncState<T>, cfg: StateConfig) {
     let state_lock = state.lock().await;
     let temp_path = format!("{}.tmp", cfg.path);

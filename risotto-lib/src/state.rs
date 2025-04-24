@@ -111,8 +111,8 @@ pub fn synthesize_withdraw_update(prefix: TimedPrefix, metadata: UpdateMetadata)
     Update {
         time_received_ns: Utc::now(),
         time_bmp_header_ns: Utc::now(),
-        router_addr: map_to_ipv6(metadata.router_addr),
-        router_port: metadata.router_port,
+        router_addr: map_to_ipv6(metadata.router_socket.ip()),
+        router_port: metadata.router_socket.port(),
         peer_addr: map_to_ipv6(metadata.peer_addr),
         peer_bgp_id: metadata.peer_bgp_id,
         peer_asn: metadata.peer_asn,
@@ -141,14 +141,14 @@ pub async fn peer_up_withdraws_handler<T: StateStore>(
     sleep(Duration::from_secs(sleep_time)).await;
 
     debug!(
-        "[{}]:{} - {} - removing updates older than {} after waited {} seconds",
-        metadata.router_addr, metadata.router_port, metadata.peer_addr, startup, sleep_time
+        "[{} - {} - removing updates older than {} after waited {} seconds",
+        metadata.router_socket, metadata.peer_addr, startup, sleep_time
     );
 
     let state_lock = state.lock().await;
     let timed_prefixes = state_lock
         .store
-        .get_updates_by_peer(&metadata.router_addr, &metadata.peer_addr);
+        .get_updates_by_peer(&metadata.router_socket.ip(), &metadata.peer_addr);
 
     drop(state_lock);
 
@@ -162,16 +162,15 @@ pub async fn peer_up_withdraws_handler<T: StateStore>(
     }
 
     debug!(
-        "[{}]:{} - {} - emitting {} synthetic withdraw updates",
-        metadata.router_addr,
-        metadata.router_port,
+        "[{} - {} - emitting {} synthetic withdraw updates",
+        metadata.router_socket,
         metadata.peer_addr,
         synthetic_updates.len()
     );
 
     counter!(
         "risotto_tx_updates_total",
-        "router" => metadata.router_addr.to_string(),
+        "router" => metadata.router_socket.ip().to_string(),
         "peer" => metadata.peer_addr.to_string(),
     )
     .increment(synthetic_updates.len() as u64);

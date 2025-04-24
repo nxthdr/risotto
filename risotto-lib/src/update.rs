@@ -8,8 +8,7 @@ use tracing::warn;
 #[derive(Debug, Clone, PartialEq)]
 pub struct UpdateMetadata {
     pub time_bmp_header_ns: i64,
-    pub router_addr: IpAddr,
-    pub router_port: u16,
+    pub router_socket: SocketAddr,
     pub peer_addr: IpAddr,
     pub peer_bgp_id: Ipv4Addr,
     pub peer_asn: u32,
@@ -93,8 +92,8 @@ pub fn decode_updates(message: RouteMonitoring, metadata: UpdateMetadata) -> Opt
                 updates.push(Update {
                     time_received_ns: Utc::now(),
                     time_bmp_header_ns,
-                    router_addr: map_to_ipv6(metadata.router_addr),
-                    router_port: metadata.router_port,
+                    router_addr: map_to_ipv6(metadata.router_socket.ip()),
+                    router_port: metadata.router_socket.port(),
                     peer_addr: map_to_ipv6(metadata.peer_addr),
                     peer_bgp_id: metadata.peer_bgp_id,
                     peer_asn: metadata.peer_asn,
@@ -141,9 +140,8 @@ pub fn new_metadata(socket: SocketAddr, message: &BmpMessage) -> Option<UpdateMe
 
     Some(UpdateMetadata {
         time_bmp_header_ns,
-        router_addr: map_to_ipv6(socket.ip()),
-        router_port: socket.port(),
-        peer_addr: map_to_ipv6(peer.peer_address),
+        router_socket: socket,
+        peer_addr: peer.peer_address,
         peer_bgp_id: peer.peer_bgp_id,
         peer_asn: peer.peer_asn.to_u32(),
         is_post_policy,

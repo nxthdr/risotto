@@ -1,7 +1,3 @@
-use std::net::{IpAddr, Ipv4Addr};
-use std::str::FromStr;
-use std::sync::mpsc;
-
 use bgpkit_parser::bmp::messages::{
     PeerDownNotification, PeerDownReason, PeerUpNotification, RouteMonitoring,
 };
@@ -9,6 +5,10 @@ use bgpkit_parser::models::{
     Asn, Attributes, BgpMessage, BgpOpenMessage, BgpUpdateMessage, NetworkPrefix,
 };
 use chrono::DateTime;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::str::FromStr;
+use std::sync::mpsc;
+
 use risotto_lib::processor::{peer_down_notification, peer_up_notification, route_monitoring};
 use risotto_lib::state::new_state;
 use risotto_lib::state_store::memory::MemoryStore;
@@ -33,8 +33,7 @@ async fn test_peer_up_notification() {
 
     let metadata = UpdateMetadata {
         time_bmp_header_ns: 0,
-        router_addr: IpAddr::from_str("192.0.1.0").unwrap(),
-        router_port: 179,
+        router_socket: SocketAddr::from_str("192.0.1.0:179").unwrap(),
         peer_addr: IpAddr::from_str("192.0.2.0").unwrap(),
         peer_bgp_id: Ipv4Addr::from_str("192.0.2.0").unwrap(),
         peer_asn: 65000,
@@ -62,9 +61,8 @@ async fn test_route_monitoring() {
     tests.push((
         UpdateMetadata {
             time_bmp_header_ns: 0,
-            router_addr: IpAddr::from_str("::ffff:192.0.1.0").unwrap(),
-            router_port: 179,
-            peer_addr: IpAddr::from_str("::ffff:192.0.2.0").unwrap(),
+            router_socket: SocketAddr::from_str("192.0.1.0:179").unwrap(),
+            peer_addr: IpAddr::from_str("192.0.2.0").unwrap(),
             peer_bgp_id: Ipv4Addr::from_str("192.0.2.0").unwrap(),
             peer_asn: 65000,
             is_post_policy: false,
@@ -128,8 +126,7 @@ async fn test_peer_down_notification() {
 
     let metadata = UpdateMetadata {
         time_bmp_header_ns: 0,
-        router_addr: IpAddr::from_str("192.0.1.0").unwrap(),
-        router_port: 179,
+        router_socket: SocketAddr::from_str("192.0.1.0:179").unwrap(),
         peer_addr: IpAddr::from_str("192.0.2.0").unwrap(),
         peer_bgp_id: Ipv4Addr::from_str("192.0.2.0").unwrap(),
         peer_asn: 65000,

@@ -42,7 +42,7 @@ pub async fn process_bmp_message<T: StateStore>(
 
     match message.message_body {
         BmpMessageBody::InitiationMessage(body) => {
-            trace!("{:?}", body);
+            trace!("{}: {:?}", socket.to_string(), body);
             let tlvs_info = body
                 .tlvs
                 .iter()
@@ -54,7 +54,7 @@ pub async fn process_bmp_message<T: StateStore>(
             // No-Op
         }
         BmpMessageBody::PeerUpNotification(body) => {
-            trace!("{:?}", body);
+            trace!("{}: {:?}", socket.to_string(), body);
             if metadata.is_none() {
                 error!(
                     "{}: PeerUpNotification: no per-peer header",
@@ -73,7 +73,7 @@ pub async fn process_bmp_message<T: StateStore>(
             peer_up_notification(state, tx, metadata, body).await;
         }
         BmpMessageBody::RouteMonitoring(body) => {
-            debug!("{}: {:?}", socket.to_string(), body);
+            trace!("{}: {:?}", socket.to_string(), body);
             if metadata.is_none() {
                 error!(
                     "{}: RouteMonitoring - no per-peer header",
@@ -87,14 +87,14 @@ pub async fn process_bmp_message<T: StateStore>(
             route_monitoring(state, tx, metadata, body).await;
         }
         BmpMessageBody::RouteMirroring(body) => {
-            trace!("{:?}", body);
+            trace!("{}: {:?}", socket.to_string(), body);
             debug!("{}: RouteMirroring", socket.to_string());
             counter!(metric_name, "router" =>  socket.to_string(), "type" => "route_mirroring")
                 .increment(1);
             // No-Op
         }
         BmpMessageBody::PeerDownNotification(body) => {
-            trace!("{:?}", body);
+            trace!("{}: {:?}", socket.to_string(), body);
             if metadata.is_none() {
                 error!(
                     "{}: PeerDownNotification: no per-peer header",
@@ -115,14 +115,14 @@ pub async fn process_bmp_message<T: StateStore>(
         }
 
         BmpMessageBody::TerminationMessage(body) => {
-            trace!("{:?}", body);
+            trace!("{}: {:?}", socket.to_string(), body);
             debug!("{}: TerminationMessage", socket.to_string());
             counter!(metric_name, "router" =>  socket.to_string(), "type" => "termination")
                 .increment(1);
             // No-Op
         }
         BmpMessageBody::StatsReport(body) => {
-            trace!("{:?}", body);
+            trace!("{}: {:?}", socket.to_string(), body);
             debug!("{}: StatsReport", socket.to_string());
             counter!(metric_name, "router" =>  socket.to_string(), "type" => "stats_report")
                 .increment(1);

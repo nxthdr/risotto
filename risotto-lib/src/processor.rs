@@ -6,7 +6,7 @@ use bytes::Bytes;
 use metrics::{counter, gauge};
 use rand::Rng;
 use std::sync::mpsc::Sender;
-use tracing::trace;
+use tracing::{debug, trace};
 
 use crate::state::AsyncState;
 use crate::state::{peer_up_withdraws_handler, synthesize_withdraw_update};
@@ -33,12 +33,12 @@ pub async fn peer_up_notification<T: StateStore>(
 
         // Add the peer to the state
         state_lock
-            .add_peer(&metadata.router_addr, &metadata.peer_addr)
+            .add_peer(&metadata.router_socket.ip(), &metadata.peer_addr)
             .unwrap();
 
         gauge!(
             "risotto_peer_established",
-            "router" => metadata.router_addr.to_string(),
+            "router" => metadata.router_socket.ip().to_string(),
             "peer" => metadata.peer_addr.to_string()
         )
         .set(1);
@@ -64,7 +64,7 @@ pub async fn route_monitoring<T: StateStore>(
     let potential_updates = decode_updates(body, metadata.clone()).unwrap_or_default();
     counter!(
         "risotto_rx_updates_total",
-        "router" => metadata.router_addr.to_string(),
+        "router" => metadata.router_socket.ip().to_string(),
         "peer" => metadata.peer_addr.to_string(),
     )
     .increment(potential_updates.len() as u64);
@@ -73,8 +73,9 @@ pub async fn route_monitoring<T: StateStore>(
     if let Some(state) = &state {
         let mut state_lock = state.lock().await;
         for update in potential_updates {
+            debug!("{}: {:?}", metadata.router_socket, update);
             let is_updated = state_lock
-                .update(&metadata.router_addr.clone(), &metadata.peer_addr, &update)
+                .update(&metadata.router_socket.ip(), &metadata.peer_addr, &update)
                 .unwrap();
             if is_updated {
                 legitimate_updates.push(update);
@@ -86,7 +87,7 @@ pub async fn route_monitoring<T: StateStore>(
 
     counter!(
         "risotto_tx_updates_total",
-        "router" => metadata.router_addr.to_string(),
+        "router" => metadata.router_socket.ip().to_string(),
         "peer" => metadata.peer_addr.to_string(),
     )
     .increment(legitimate_updates.len() as u64);
@@ -112,7 +113,7 @@ pub async fn peer_down_notification<T: StateStore>(
 
         let mut synthetic_updates = Vec::new();
         let updates = state_lock
-            .get_updates_by_peer(&metadata.router_addr, &metadata.peer_addr)
+            .get_updates_by_peer(&metadata.router_socket.ip(), &metadata.peer_addr)
             .unwrap();
         for prefix in updates {
             synthetic_updates.push(synthesize_withdraw_update(prefix.clone(), metadata.clone()));
@@ -120,19 +121,19 @@ pub async fn peer_down_notification<T: StateStore>(
 
         // Remove the peer from the state
         state_lock
-            .remove_peer(&metadata.router_addr, &metadata.peer_addr)
+            .remove_peer(&metadata.router_socket.ip(), &metadata.peer_addr)
             .unwrap();
 
         gauge!(
             "risotto_peer_established",
-            "router" => metadata.router_addr.to_string(),
+            "router" => metadata.router_socket.ip().to_string(),
             "peer" => metadata.peer_addr.to_string()
         )
         .set(0);
 
         counter!(
             "risotto_tx_updates_total",
-            "router" => metadata.router_addr.to_string(),
+            "router" => metadata.router_socket.ip().to_string(),
             "peer" => metadata.peer_addr.to_string(),
         )
         .increment(synthetic_updates.len() as u64);
