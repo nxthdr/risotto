@@ -13,10 +13,15 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - run: sudo apt install libpcap-dev libsasl2-dev libssl-dev capnproto
+    - name: Run sccache-cache
+      uses: mozilla-actions/sccache-action@v0.0.8
     - name: Build
-      run: cargo build --verbose
-    - name: Run tests
-      run: cargo test --verbose
+      env:
+        SCCACHE_GHA_ENABLED: "true"
+        RUSTC_WRAPPER: "sccache"
+      run: |
+        cargo build --verbose
+        cargo test --verbose
 
   docker:
     strategy:
