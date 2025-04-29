@@ -61,6 +61,10 @@ pub async fn route_monitoring<T: StateStore>(
     metadata: UpdateMetadata,
     body: RouteMonitoring,
 ) {
+    trace!(
+        "{}: inside route_monitoring processor",
+        metadata.router_socket
+    );
     let potential_updates = decode_updates(body, metadata.clone()).unwrap_or_default();
     counter!(
         "risotto_rx_updates_total",
@@ -68,6 +72,12 @@ pub async fn route_monitoring<T: StateStore>(
         "peer" => metadata.peer_addr.to_string(),
     )
     .increment(potential_updates.len() as u64);
+
+    trace!(
+        "{}: len potential updates: {}",
+        metadata.router_socket,
+        potential_updates.len()
+    );
 
     let mut legitimate_updates = Vec::new();
     if let Some(state) = &state {
@@ -85,6 +95,12 @@ pub async fn route_monitoring<T: StateStore>(
         legitimate_updates = potential_updates;
     }
 
+    trace!(
+        "{}: len legitimate updates: {}",
+        metadata.router_socket,
+        legitimate_updates.len()
+    );
+
     counter!(
         "risotto_tx_updates_total",
         "router" => metadata.router_socket.ip().to_string(),
@@ -98,6 +114,8 @@ pub async fn route_monitoring<T: StateStore>(
         // Sent to the event pipeline
         tx.send(update).unwrap();
     }
+
+    trace!("{}: end route_monitoring processor", metadata.router_socket);
 }
 
 pub async fn peer_down_notification<T: StateStore>(
