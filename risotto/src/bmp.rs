@@ -97,8 +97,14 @@ pub async fn handle<T: StateStore>(
                 );
                 let mut buffer_bytes = Bytes::from(buffer);
 
+                // Clone values before moving them into the async block
+                let state = state.clone();
+                let tx = tx.clone();
+
                 // Process the BMP message
-                process_bmp_message(state.clone(), tx.clone(), socket, &mut buffer_bytes).await;
+                tokio::spawn(async move {
+                    process_bmp_message(state, tx, socket, &mut buffer_bytes).await;
+                });
             }
             Err(e) => {
                 if e.kind() == std::io::ErrorKind::UnexpectedEof {
