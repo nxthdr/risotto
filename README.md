@@ -8,22 +8,6 @@ Risotto 😋 is a BGP collector that processes BMP protocol messages from router
 
 The collector application streams BGP updates to a Kafka topic, enabling downstream components to consume them. The library offers essential components for decoding BMP messages and generating BGP updates.
 
-## State Management
-
-Risotto maintains a state representing connected routers and their associated BGP peers and announced prefixes.
-This state addresses two challenges when handling BMP data:
-- **Duplicate announcements** from BMP session resets, where the router resends all active prefixes to the collector after a restart or connectivity issue.
-- **Missing withdraws** when Peer Down notifications occur or when the collector is offline, resulting in incorrect BGP state downstream.
-
-Duplicate announcements could, in theory, be handled by the database, but less data manipulation is better. Instead, Risotto checks each incoming update against its state. If the prefix is already present, the update is discarded.
-
-Missing withdraws are generated synthetically when receiving Peer Down notifications for the prefixes already announced by the downed peer.
-
-For persistance, Risotto dumps its state at specified interval, and fetches it at startup. Risotto is able to infer any missing withdraws that would have occured during downtime, from the initial peer up flow. This ensures the database remains accurate, even if the collector is restarted. On the other hand, a restart may result in duplicate announcements.
-In other words, Risotto guaranties that the database is always in a consistent state, but may contain some duplicate announcements.
-
-Conversely, Risotto can be configured to stream updates as is to the event pipeline without any state management. It is useful if there are other components downstream that can handle the state management.
-
 ## Quick Start
 
 The easiest way to use Risotto with Docker. This command will output the help message and exit:
@@ -44,6 +28,19 @@ docker run \
 By default, Risotto listens on port `4000` for BMP messages.
 Additionally, a Prometheus HTTP endpoint is available at `http://localhost:8080/metrics` to monitor the collector's performance and statistics.
 
+## State Management
+
+Risotto maintains a state representing connected routers and their associated BGP peers and announced prefixes. This state is dumped to a file at specified intervals.
+This state addresses two challenges when handling BMP data:
+- **Duplicate announcements** from BMP session resets, where the router resends all active prefixes to the collector after a restart or connectivity issue.
+- **Missing withdraws** that occur when a BGP session goes down and the router is implemented not to send the withdraws messages, or when the collector experiences downtime. These scenarios can result in stale or inaccurate BGP state in downstream systems.
+
+Risotto checks each incoming update against its state. If the prefix is already present, the update is not sent downstream. Missing withdraws are generated synthetically when receiving Peer Down notifications, if the withdraws have not been sent by the router, by using the prefixes stored in the state for this router and downed peer.
+
+When the collector restarts, Risotto infers any missing withdraws from the initial Peer Up sequence, ensuring the database remains accurate despite downtime. However, any announcements received after the last saved state may be replayed. In short, Risotto guarantees a consistent database state, though it may contain some duplicate announcements following a restart.
+
+Conversely, Risotto can be configured to stream updates to the event pipeline as is by disabling the state usage.
+
 ## Contributing
 
-Refer to the Docker Compose [integration](./integration/) tests to try Risotto locally. The setup includes two routers sharing updates announced between them, and transmitting BMP messages to Risotto.
+Refer to the Docker Compose [integration](./integration/) tests to try Risotto locally. The setup includes BIRD and GoBGP routers announcing BGP updates between them, and transmitting BMP messages to Risotto.
