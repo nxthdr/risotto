@@ -4,9 +4,9 @@ use core::net::IpAddr;
 use metrics::{counter, gauge};
 use serde::{Deserialize, Serialize};
 use std::hash::{Hash, Hasher};
-use std::sync::mpsc::Sender;
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::mpsc::Sender;
 use tokio::sync::Mutex;
 use tokio::time::sleep;
 use tracing::{debug, trace};
@@ -130,7 +130,7 @@ pub async fn peer_up_withdraws_handler<T: StateStore>(
     tx: Sender<Update>,
     metadata: UpdateMetadata,
     sleep_time: u64,
-) {
+) -> Result<()> {
     let startup = chrono::Utc::now();
     sleep(Duration::from_secs(sleep_time)).await;
 
@@ -174,11 +174,13 @@ pub async fn peer_up_withdraws_handler<T: StateStore>(
         trace!("{:?}", update);
 
         // Sent to the event pipeline
-        tx.send(update.clone()).unwrap();
+        tx.send(update.clone()).await?;
 
         // Remove the update from the state
         state_lock
             .store
             .update(&update.router_addr, &metadata.peer_addr, update);
     }
+
+    Ok(())
 }

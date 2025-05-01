@@ -7,7 +7,7 @@ use bgpkit_parser::models::{
 use chrono::DateTime;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::str::FromStr;
-use std::sync::mpsc;
+use tokio::sync::mpsc::channel;
 
 use risotto_lib::processor::{peer_down_notification, peer_up_notification, route_monitoring};
 use risotto_lib::state::new_state;
@@ -27,7 +27,7 @@ fn default_open_message() -> BgpOpenMessage {
 
 #[tokio::test]
 async fn test_peer_up_notification() {
-    let (tx, rx) = mpsc::channel();
+    let (tx, mut rx) = channel(100);
     let store = MemoryStore::new();
     let state = new_state(store);
 
@@ -50,7 +50,9 @@ async fn test_peer_up_notification() {
         tlvs: vec![],
     };
 
-    peer_up_notification(Some(state), tx, metadata, body).await;
+    peer_up_notification(Some(state), tx, metadata, body)
+        .await
+        .unwrap();
 
     assert!(rx.try_recv().is_err());
 }
@@ -104,14 +106,16 @@ async fn test_route_monitoring() {
     ));
 
     for (metadata, body, expects) in tests {
-        let (tx, rx) = mpsc::channel();
+        let (tx, mut rx) = channel(100);
         let store = MemoryStore::new();
         let state = new_state(store);
 
-        route_monitoring(Some(state), tx, metadata, body).await;
+        route_monitoring(Some(state), tx, metadata, body)
+            .await
+            .unwrap();
 
         for expect in expects.iter() {
-            let mut update = rx.recv().unwrap();
+            let mut update = rx.recv().await.unwrap();
             update.time_received_ns = expect.time_received_ns;
             assert_eq!(update, expect.clone());
         }
@@ -120,7 +124,7 @@ async fn test_route_monitoring() {
 
 #[tokio::test]
 async fn test_peer_down_notification() {
-    let (tx, rx) = mpsc::channel();
+    let (tx, mut rx) = channel(100);
     let store = MemoryStore::new();
     let state = new_state(store);
 
@@ -139,7 +143,9 @@ async fn test_peer_down_notification() {
         data: None,
     };
 
-    peer_down_notification(Some(state), tx, metadata, body).await;
+    peer_down_notification(Some(state), tx, metadata, body)
+        .await
+        .unwrap();
 
     assert!(rx.try_recv().is_err());
 }

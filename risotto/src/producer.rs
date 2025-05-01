@@ -1,10 +1,11 @@
+use anyhow::Result;
 use metrics::counter;
 use rdkafka::config::ClientConfig;
 use rdkafka::message::OwnedHeaders;
 use rdkafka::producer::{FutureProducer, FutureRecord};
 use risotto_lib::update::Update;
-use std::sync::mpsc::Receiver;
 use std::time::Duration;
+use tokio::sync::mpsc::Receiver;
 use tracing::{debug, error, trace};
 
 use crate::config::KafkaConfig;
@@ -23,7 +24,7 @@ pub enum KafkaAuth {
     PlainText,
 }
 
-pub async fn handle(config: &KafkaConfig, rx: Receiver<Update>) {
+pub async fn handle(config: &KafkaConfig, mut rx: Receiver<Update>) -> Result<()> {
     // Configure Kafka authentication
     let kafka_auth = match config.auth_protocol.as_str() {
         "PLAINTEXT" => KafkaAuth::PlainText,
@@ -33,34 +34,46 @@ pub async fn handle(config: &KafkaConfig, rx: Receiver<Update>) {
             mechanism: config.auth_sasl_mechanism.clone(),
         }),
         _ => {
-            error!("invalid Kafka producer authentication protocol");
-            return;
+            anyhow::bail!("invalid Kafka producer authentication protocol");
         }
     };
 
-    if config.enable == false {
+    if config.disable {
         debug!("producer disabled");
-        loop {
-            rx.recv().unwrap();
+        while let Some(_update) = rx.recv().await {
+            // Just consume and drop
         }
     }
 
-    let producer: &FutureProducer = match kafka_auth {
-        KafkaAuth::PlainText => &ClientConfig::new()
-            .set("bootstrap.servers", config.brokers.clone())
-            .set("message.timeout.ms", "5000")
-            .create()
-            .expect("Producer creation error"),
-        KafkaAuth::SasalPlainText(scram_auth) => &ClientConfig::new()
-            .set("bootstrap.servers", config.brokers.clone())
-            .set("message.timeout.ms", "5000")
-            .set("sasl.username", scram_auth.username)
-            .set("sasl.password", scram_auth.password)
-            .set("sasl.mechanisms", scram_auth.mechanism)
+    let kafka_brokers = config
+        .brokers
+        .iter()
+        .map(|addr| addr.to_string())
+        .collect::<Vec<_>>()
+        .join(",");
+    debug!(
+        "Kafka producer enabled, connecting to brokers: {}",
+        kafka_brokers
+    );
+
+    // Configure Kafka producer
+    let mut client_config = ClientConfig::new();
+    client_config
+        .set("bootstrap.servers", kafka_brokers)
+        .set("message.timeout.ms", config.message_timeout_ms.to_string());
+
+    if let KafkaAuth::SasalPlainText(auth) = kafka_auth {
+        client_config = client_config
+            .set("sasl.username", auth.username)
+            .set("sasl.password", auth.password)
+            .set("sasl.mechanisms", auth.mechanism)
             .set("security.protocol", "SASL_PLAINTEXT")
-            .create()
-            .expect("Producer creation error"),
-    };
+            .to_owned();
+    }
+
+    let producer: FutureProducer = client_config
+        .create()
+        .expect("Failed to create Kafka producer");
 
     // Send to Kafka
     let mut additional_message: Option<Vec<u8>> = None;

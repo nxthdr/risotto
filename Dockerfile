@@ -20,8 +20,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /app/target/release/risotto /app/risotto
 
-EXPOSE 3000
 EXPOSE 4000
+EXPOSE 8080
 
 ENTRYPOINT [ "/app/risotto" ]
-CMD [ "--help" ]

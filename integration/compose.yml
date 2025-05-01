@@ -48,11 +48,9 @@ services:
   # Pipeline
   risotto:
     build: ..
-    command: -v --config /config/risotto.yml
-    volumes:
-      - ./config/risotto/risotto.yml:/config/risotto.yml
+    command: -v --kafka-brokers=10.0.0.100:9092 --state-path=/app/state.bin
     ports:
-      - "3000:3000"
+      - "8080:8080"
     networks:
       integration:
         ipv4_address: 10.0.0.99
