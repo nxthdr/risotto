@@ -26,42 +26,23 @@ Conversely, Risotto can be configured to stream updates as is to the event pipel
 
 ## Quick Start
 
-The easiest way to use Risotto with Docker.
+The easiest way to use Risotto with Docker. This command will output the help message and exit:
 
-* Create a `risotto.yml` configuration file
-
-```yml
-api:
-  address: 0.0.0.0
-  port: 3000
-
-bmp:
-  address: 0.0.0.0
-  port: 4000
-
-kafka:
-  enable: true
-  brokers: "kafka.example.com:9092"
-  auth_protocol: PLAINTEXT
-  topic: bgp-updates
-
-state:
-  enable: true
-  path: /app/dump.bin
-  save_interval: 10
+```bash
+docker run ghcr.io/nxthdr/risotto:main --help
 ```
 
-* Run your Docker container
+To run Risotto with Docker with the default parameters, you can use the following command:
 
 ```bash
 docker run \
-    -v $(PWD)/risotto.yml:/config/risotto.yml \
-    -p 3000:3000 \
-    -p 4000:4000 \
-    ghcr.io/nxthdr/risotto:main -c /config/risotto.yml
+  -p 4000:4000 \
+  -p 8080:8080 \
+  ghcr.io/nxthdr/risotto:main
 ```
 
-An Prometheus HTTP endpoint is available at `http://localhost:3000/metrics` to monitor the collector's performance and statistics.
+By default, Risotto listens on port `4000` for BMP messages.
+Additionally, a Prometheus HTTP endpoint is available at `http://localhost:8080/metrics` to monitor the collector's performance and statistics.
 
 ## Contributing
 

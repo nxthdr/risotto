@@ -1,9 +1,9 @@
 use anyhow::Result;
 use bytes::Bytes;
 
-use std::sync::mpsc::Sender;
 use tokio::io::AsyncReadExt;
 use tokio::net::TcpStream;
+use tokio::sync::mpsc::Sender;
 use tracing::{debug, error, trace};
 
 use risotto_lib::process_bmp_message;
@@ -98,22 +98,21 @@ pub async fn handle<T: StateStore>(
                 let mut buffer_bytes = Bytes::from(buffer);
 
                 // Process the BMP message
-                process_bmp_message(state.clone(), tx.clone(), socket, &mut buffer_bytes).await;
+                process_bmp_message(state.clone(), tx.clone(), socket, &mut buffer_bytes).await?;
             }
             Err(e) => {
                 if e.kind() == std::io::ErrorKind::UnexpectedEof {
-                    debug!(
+                    anyhow::bail!(
                         "{}: connection closed while reading message body",
                         socket.to_string()
                     );
                 } else {
-                    error!(
+                    anyhow::bail!(
                         "{}: failed to read message body; error = {:?}",
                         socket.to_string(),
                         e
                     );
-                }
-                break;
+                };
             }
         }
     }

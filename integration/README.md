@@ -33,7 +33,7 @@ docker compose up -d --build --force-recreate --renew-anon-volumes
 * Check Prometheus metrics
 
 ```sh
-curl -s http://127.0.0.1:3000/metrics
+curl -s http://127.0.0.1:8080/metrics
 ```
 
 * Interact with the gobgp routers:

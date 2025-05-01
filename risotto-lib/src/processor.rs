@@ -5,8 +5,8 @@ use bgpkit_parser::parser::bmp::messages::BmpMessage;
 use bytes::Bytes;
 use metrics::{counter, gauge};
 use rand::Rng;
-use std::sync::mpsc::Sender;
-use tracing::{debug, trace};
+use tokio::sync::mpsc::Sender;
+use tracing::{debug, error, trace};
 
 use crate::state::AsyncState;
 use crate::state::{peer_up_withdraws_handler, synthesize_withdraw_update};
@@ -27,7 +27,7 @@ pub async fn peer_up_notification<T: StateStore>(
     tx: Sender<Update>,
     metadata: UpdateMetadata,
     _: PeerUpNotification,
-) {
+) -> Result<()> {
     if let Some(state) = state {
         let mut state_lock = state.lock().await;
 
@@ -50,9 +50,13 @@ pub async fn peer_up_notification<T: StateStore>(
         };
         let sleep_time = 300 + random; // 5 minutes +/- 1 minute
         tokio::spawn(async move {
-            peer_up_withdraws_handler(spawn_state, tx, metadata, sleep_time).await;
+            if let Err(e) = peer_up_withdraws_handler(spawn_state, tx, metadata, sleep_time).await {
+                error!("Error in peer_up_withdraws_handler: {}", e);
+            }
         });
     }
+
+    Ok(())
 }
 
 pub async fn route_monitoring<T: StateStore>(
@@ -60,7 +64,7 @@ pub async fn route_monitoring<T: StateStore>(
     tx: Sender<Update>,
     metadata: UpdateMetadata,
     body: RouteMonitoring,
-) {
+) -> Result<()> {
     let potential_updates = decode_updates(body, metadata.clone()).unwrap_or_default();
     counter!(
         "risotto_rx_updates_total",
@@ -96,8 +100,10 @@ pub async fn route_monitoring<T: StateStore>(
         trace!("{:?}", update);
 
         // Sent to the event pipeline
-        tx.send(update).unwrap();
+        tx.send(update).await?;
     }
+
+    Ok(())
 }
 
 pub async fn peer_down_notification<T: StateStore>(
@@ -105,7 +111,7 @@ pub async fn peer_down_notification<T: StateStore>(
     tx: Sender<Update>,
     metadata: UpdateMetadata,
     _: PeerDownNotification,
-) {
+) -> Result<()> {
     if let Some(state) = state {
         // Remove the peer and the associated updates from the state
         // We start by emiting synthetic withdraw updates
@@ -142,7 +148,9 @@ pub async fn peer_down_notification<T: StateStore>(
             trace!("{:?}", update);
 
             // Send the synthetic updates to the event pipeline
-            tx.send(update).unwrap();
+            tx.send(update).await?;
         }
     }
+
+    Ok(())
 }

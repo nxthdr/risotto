@@ -1,3 +1,4 @@
+use anyhow::Result;
 use chrono::Utc;
 use metrics::{counter, gauge, histogram};
 use serde::{Deserialize, Serialize};
@@ -12,7 +13,7 @@ use risotto_lib::state_store::store::StateStore;
 
 use crate::config::StateConfig;
 
-pub async fn dump<T: StateStore + Serialize>(state: AsyncState<T>, cfg: StateConfig) {
+pub async fn dump<T: StateStore + Serialize>(state: AsyncState<T>, cfg: StateConfig) -> Result<()> {
     let state_lock = state.lock().await;
     let temp_path = format!("{}.tmp", cfg.path);
 
@@ -21,38 +22,34 @@ pub async fn dump<T: StateStore + Serialize>(state: AsyncState<T>, cfg: StateCon
             match File::create(&temp_path).await {
                 Ok(mut file) => {
                     if let Err(e) = file.write_all(&encoded).await {
-                        error!(
-                            "Failed to write serialized state to temporary file {}: {}",
-                            temp_path, e
-                        );
                         let _ = tokio::fs::remove_file(&temp_path).await;
-                        return;
+                        anyhow::bail!(
+                            "Failed to write serialized state to temporary file {}: {}",
+                            temp_path,
+                            e
+                        );
                     }
 
                     if let Err(e) = file.sync_all().await {
-                        error!("Failed to sync temporary state file {}: {}", temp_path, e);
                         let _ = tokio::fs::remove_file(&temp_path).await;
-                        return;
+                        anyhow::bail!("Failed to sync temporary state file {}: {}", temp_path, e);
                     }
                 }
                 Err(e) => {
-                    error!("Failed to create temporary state file {}: {}", temp_path, e);
-                    return;
+                    anyhow::bail!("Failed to create temporary state file {}: {}", temp_path, e);
                 }
             }
 
             if let Err(e) = rename(&temp_path, cfg.path.clone()).await {
-                error!(
-                    "Failed to rename temporary state file {} to {}: {}",
-                    temp_path, cfg.path, e
-                );
                 let _ = tokio::fs::remove_file(&temp_path).await;
+                anyhow::bail!("Failed to rename temporary state file: {}", e);
             } else {
                 trace!("Successfully dumped state to {}", cfg.path);
+                Ok(())
             }
         }
         Err(e) => {
-            error!("Failed to serialize state using bincode: {}", e);
+            anyhow::bail!("Failed to serialize state using bincode: {}", e);
         }
     }
 }
@@ -104,20 +101,17 @@ pub async fn load<T: StateStore + for<'de> Deserialize<'de>>(
 }
 
 pub async fn dump_handler<T: StateStore + Serialize>(
-    state: Option<AsyncState<T>>,
+    state: AsyncState<T>,
     cfg: StateConfig,
-) {
+) -> Result<()> {
     loop {
-        // TODO do not spawn this task if state is disabled
         sleep(Duration::from_secs(cfg.interval)).await;
-        if let Some(ref state) = state {
-            trace!("dumping state to {}", cfg.path);
-            let start = std::time::Instant::now();
-            dump(state.clone(), cfg.clone()).await;
-            let duration = start.elapsed();
-            trace!("State dump finished in {:?}", duration);
-            counter!("risotto_state_dump_total").increment(1);
-            histogram!("risotto_state_dump_duration_seconds").record(duration.as_secs_f64());
-        }
+        trace!("dumping state to {}", cfg.path);
+        let start = std::time::Instant::now();
+        dump(state.clone(), cfg.clone()).await?;
+        let duration = start.elapsed();
+        trace!("State dump finished in {:?}", duration);
+        counter!("risotto_state_dump_total").increment(1);
+        histogram!("risotto_state_dump_duration_seconds").record(duration.as_secs_f64());
     }
 }
