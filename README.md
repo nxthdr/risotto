@@ -4,7 +4,7 @@
 
 # Risotto
 
-Risotto 😋 is a BGP collector that processes BMP protocol messages from routers and publishes updates to Kafka/Redpanda. This repository includes both the Risotto collector application and the Risotto library.
+Risotto 😋 is a high-performance collector that processes BMP messages from routers and publishes updates to Kafka/Redpanda. This repository includes both the Risotto collector application and the Risotto library.
 
 The collector application streams BGP updates to a Kafka topic, enabling downstream components to consume them. The library offers essential components for decoding BMP messages and generating BGP updates.
 
