@@ -13,7 +13,7 @@ jobs:
   tests:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     - run: sudo apt install libpcap-dev libsasl2-dev libssl-dev capnproto
     - uses: Swatinem/rust-cache@v2
     - run: |
@@ -35,7 +35,7 @@ jobs:
     needs: [ tests ]
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Prepare
         run: |
