@@ -122,6 +122,7 @@ pub fn synthesize_withdraw_update(prefix: TimedPrefix, metadata: UpdateMetadata)
         med: None,
         communities: vec![],
         synthetic: true,
+        attributes: Vec::new(),
     }
 }
 

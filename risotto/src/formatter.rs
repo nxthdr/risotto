@@ -45,6 +45,16 @@ pub fn serialize_update(update: &Update) -> Vec<u8> {
             community.set_value(value);
         }
         u.set_synthetic(update.synthetic);
+        
+        // Serialize BGP attributes
+        let mut attributes = u
+            .reborrow()
+            .init_attributes(update.attributes.len() as u32);
+        for (i, (type_code, value)) in update.attributes.iter().enumerate() {
+            let mut attribute = attributes.reborrow().get(i as u32);
+            attribute.set_type_code(*type_code);
+            attribute.set_value(value);
+        }
     }
 
     serialize::write_message_to_words(&message)

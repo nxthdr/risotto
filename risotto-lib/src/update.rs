@@ -37,6 +37,7 @@ pub struct Update {
     pub med: Option<u32>,
     pub communities: Vec<(u32, u16)>,
     pub synthetic: bool,
+    pub attributes: Vec<(u8, Vec<u8>)>,
 }
 
 pub fn decode_updates(message: RouteMonitoring, metadata: UpdateMetadata) -> Option<Vec<Update>> {
@@ -77,6 +78,9 @@ pub fn decode_updates(message: RouteMonitoring, metadata: UpdateMetadata) -> Opt
             let med = attributes.multi_exit_discriminator();
             let communities: Vec<MetaCommunity> = attributes.iter_communities().collect();
 
+            // Extract all BGP attributes generically
+            let bgp_attributes = extract_bgp_attributes(&attributes, &communities);
+
             let time_bmp_header_ns = match Utc.timestamp_millis_opt(metadata.time_bmp_header_ns) {
                 MappedLocalTime::Single(dt) => dt,
                 _ => {
@@ -109,6 +113,7 @@ pub fn decode_updates(message: RouteMonitoring, metadata: UpdateMetadata) -> Opt
                     med,
                     communities: new_communities(&communities.clone()),
                     synthetic: false,
+                    attributes: bgp_attributes.clone(),
                 });
             }
 
@@ -197,4 +202,91 @@ pub fn map_to_ipv6(ip: IpAddr) -> IpAddr {
     } else {
         ip
     }
+}
+
+/// Extract BGP attributes generically using a data-driven approach
+fn extract_bgp_attributes(
+    attributes: &bgpkit_parser::models::Attributes,
+    communities: &[MetaCommunity],
+) -> Vec<(u8, Vec<u8>)> {
+    let mut bgp_attributes = Vec::new();
+    
+    // Define attribute extractors as closures for cleaner code
+    let extractors: Vec<Box<dyn Fn(&bgpkit_parser::models::Attributes) -> Option<(u8, Vec<u8>)>>> = vec![
+        // ORIGIN (Type 1)
+        Box::new(|attrs| {
+            Some((1u8, vec![attrs.origin() as u8]))
+        }),
+        
+        // AS_PATH (Type 2)
+        Box::new(|attrs| {
+            attrs.as_path().map(|as_path| {
+                let mut as_path_bytes = Vec::new();
+                for segment in &as_path.segments {
+                    for asn in segment {
+                        as_path_bytes.extend_from_slice(&asn.to_u32().to_be_bytes());
+                    }
+                }
+                (2u8, as_path_bytes)
+            })
+        }),
+        
+        // NEXT_HOP (Type 3)
+        Box::new(|attrs| {
+            attrs.next_hop().map(|next_hop_ip| {
+                let next_hop_bytes = match next_hop_ip {
+                    std::net::IpAddr::V4(addr) => addr.octets().to_vec(),
+                    std::net::IpAddr::V6(addr) => addr.octets().to_vec(),
+                };
+                (3u8, next_hop_bytes)
+            })
+        }),
+        
+        // MULTI_EXIT_DISC (Type 4)
+        Box::new(|attrs| {
+            attrs.multi_exit_discriminator().map(|med| {
+                (4u8, med.to_be_bytes().to_vec())
+            })
+        }),
+        
+        // LOCAL_PREF (Type 5)
+        Box::new(|attrs| {
+            attrs.local_preference().map(|local_pref| {
+                (5u8, local_pref.to_be_bytes().to_vec())
+            })
+        }),
+        
+        // ATOMIC_AGGREGATE (Type 6)
+        Box::new(|attrs| {
+            if attrs.atomic_aggregate() {
+                Some((6u8, vec![]))
+            } else {
+                None
+            }
+        }),
+        
+        // AGGREGATOR (Type 7)
+        Box::new(|attrs| {
+            attrs.aggregator().map(|aggregator| {
+                let mut aggregator_bytes = Vec::new();
+                aggregator_bytes.extend_from_slice(&aggregator.0.to_u32().to_be_bytes());
+                aggregator_bytes.extend_from_slice(&aggregator.1.octets());
+                (7u8, aggregator_bytes)
+            })
+        }),
+    ];
+    
+    // Apply all extractors
+    for extractor in extractors {
+        if let Some((type_code, data)) = extractor(attributes) {
+            bgp_attributes.push((type_code, data));
+        }
+    }
+    
+    // COMMUNITIES (Type 8) - handle separately due to external parameter
+    if !communities.is_empty() {
+        bgp_attributes.push((8u8, vec![0u8; 4])); // Placeholder for now
+    }
+    
+    bgp_attributes
 }
