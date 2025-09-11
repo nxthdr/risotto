@@ -102,6 +102,7 @@ async fn test_route_monitoring() {
             med: None,
             communities: vec![],
             synthetic: false,
+            attributes: vec![(1u8, vec![2u8])], // ORIGIN attribute with INCOMPLETE value
         }],
     ));
 

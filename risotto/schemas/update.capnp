@@ -20,9 +20,15 @@ struct Update {
     med                @16 :UInt32;
     communities        @17 :List(Community);
     synthetic          @18 :Bool;
+    attributes         @19 :List(Attribute);
 }
 
 struct Community {
     asn                @0  :UInt32;
     value              @1  :UInt16;
+}
+
+struct Attribute {
+    typeCode           @0  :UInt8;
+    value              @1  :Data;
 }
