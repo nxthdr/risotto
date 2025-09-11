@@ -13,8 +13,7 @@ use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio_graceful::Shutdown;
 use tracing::{debug, error, trace};
 
-use risotto_lib::state::new_state;
-use risotto_lib::state::AsyncState;
+use risotto_lib::state::{new_state, AsyncState};
 use risotto_lib::state_store::memory::MemoryStore;
 use risotto_lib::state_store::store::StateStore;
 use risotto_lib::update::Update;

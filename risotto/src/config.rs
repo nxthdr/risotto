@@ -117,13 +117,6 @@ pub struct Cli {
     pub verbose: Verbosity<InfoLevel>,
 }
 
-pub async fn resolve_address(address: String) -> Result<SocketAddr> {
-    match lookup_host(&address).await?.next() {
-        Some(addr) => Ok(addr),
-        None => anyhow::bail!("Failed to resolve address: {}", address),
-    }
-}
-
 fn set_logging(cli: &Cli) -> Result<()> {
     let subscriber = tracing_subscriber::fmt()
         .compact()
@@ -171,6 +164,13 @@ fn set_metrics(metrics_address: SocketAddr) {
         "risotto_tx_updates_total",
         "Total number of updates transmitted"
     );
+}
+
+pub async fn resolve_address(address: String) -> Result<SocketAddr> {
+    match lookup_host(&address).await?.next() {
+        Some(addr) => Ok(addr),
+        None => anyhow::bail!("Failed to resolve address: {}", address),
+    }
 }
 
 pub async fn configure() -> Result<AppConfig> {
