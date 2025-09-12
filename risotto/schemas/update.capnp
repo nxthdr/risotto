@@ -13,14 +13,26 @@ struct Update {
     isPostPolicy       @9  :Bool;
     isAdjRibOut        @10 :Bool;
     announced          @11 :Bool;
-    nextHop            @12 :Data;
+    synthetic          @12 :Bool;
+
     origin             @13 :Text;
-    path               @14 :List(UInt32);
-    localPreference    @15 :UInt32;
-    med                @16 :UInt32;
-    communities        @17 :List(Community);
-    synthetic          @18 :Bool;
-    attributes         @19 :List(Attribute);
+    asPath             @14 :List(UInt32);
+    nextHop            @15 :Data;
+    multiExitDisc      @16 :UInt32;
+    localPreference    @17 :UInt32;
+    onlyToCustomer     @18 :UInt32;
+    atomicAggregate    @19 :Bool;
+    aggregatorAsn      @20 :UInt32;
+    aggregatorBgpId    @21 :UInt32;
+    communities        @22 :List(Community);
+    extendedCommunities @23 :List(ExtendedCommunity);
+    largeCommunities   @24 :List(LargeCommunity);
+    originatorId       @25 :UInt32;
+    clusterList        @26 :List(UInt32);
+    mpReachAfi         @27 :UInt16;
+    mpReachSafi        @28 :UInt8;
+    mpUnreachAfi       @29 :UInt16;
+    mpUnreachSafi      @30 :UInt8;
 }
 
 struct Community {
@@ -28,7 +40,14 @@ struct Community {
     value              @1  :UInt16;
 }
 
-struct Attribute {
-    typeCode           @0  :UInt8;
-    value              @1  :Data;
+struct ExtendedCommunity {
+    typeHigh           @0  :UInt8;
+    typeLow            @1  :UInt8;
+    value              @2  :Data;
+}
+
+struct LargeCommunity {
+    globalAdmin        @0  :UInt32;
+    localDataPart1     @1  :UInt32;
+    localDataPart2     @2  :UInt32;
 }
