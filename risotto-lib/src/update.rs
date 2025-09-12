@@ -1,6 +1,6 @@
 use bgpkit_parser::bmp::messages::{BmpMessage, PerPeerFlags, RouteMonitoring};
 use bgpkit_parser::models::*;
-use chrono::{DateTime, MappedLocalTime, TimeZone, Utc};
+use chrono::{DateTime, TimeZone, Utc};
 use core::net::IpAddr;
 use std::net::{Ipv4Addr, SocketAddr};
 use tracing::warn;
@@ -30,97 +30,153 @@ pub struct Update {
     pub is_post_policy: bool,
     pub is_adj_rib_out: bool,
     pub announced: bool,
-    pub next_hop: Option<IpAddr>,
-    pub origin: String,
-    pub path: Vec<u32>,
-    pub local_preference: Option<u32>,
-    pub med: Option<u32>,
-    pub communities: Vec<(u32, u16)>,
     pub synthetic: bool,
-    pub attributes: Vec<(u8, Vec<u8>)>,
+
+    // BGP Attributes
+    pub origin: String,
+    pub as_path: Vec<u32>,
+    pub next_hop: Option<IpAddr>,
+    pub multi_exit_discriminator: Option<u32>,
+    pub local_preference: Option<u32>,
+    pub only_to_customer: Option<u32>,
+    pub atomic_aggregate: bool,
+    pub aggregator_asn: Option<u32>,
+    pub aggregator_bgp_id: Option<u32>,
+    pub communities: Vec<(u32, u16)>,
+    pub extended_communities: Vec<(u8, u8, Vec<u8>)>, // (type_high, type_low, value)
+    pub large_communities: Vec<(u32, u32, u32)>,      // (global_admin, local_data1, local_data2)
+    pub originator_id: Option<u32>,
+    pub cluster_list: Vec<u32>,
+    pub mp_reach_afi: Option<u16>,
+    pub mp_reach_safi: Option<u8>,
+    pub mp_unreach_afi: Option<u16>,
+    pub mp_unreach_safi: Option<u8>,
 }
 
 pub fn decode_updates(message: RouteMonitoring, metadata: UpdateMetadata) -> Option<Vec<Update>> {
-    let mut updates = Vec::new();
+    let bgp_update = match message.bgp_message {
+        bgpkit_parser::models::BgpMessage::Update(update) => update,
+        _ => return None,
+    };
 
-    match message.bgp_message {
-        bgpkit_parser::models::BgpMessage::Update(bgp_update) => {
-            // https://datatracker.ietf.org/doc/html/rfc4271
-            let mut prefixes_to_update = Vec::new();
-            for prefix in bgp_update.announced_prefixes {
-                prefixes_to_update.push((prefix, true));
-            }
-            for prefix in bgp_update.withdrawn_prefixes {
-                prefixes_to_update.push((prefix, false));
-            }
+    // Collect all prefixes with their announcement status in one go
+    let prefixes_to_update: Vec<_> = bgp_update
+        .announced_prefixes
+        .into_iter()
+        .map(|p| (p, true))
+        .chain(
+            bgp_update
+                .withdrawn_prefixes
+                .into_iter()
+                .map(|p| (p, false)),
+        )
+        .chain(
+            bgp_update
+                .attributes
+                .get_reachable_nlri()
+                .map(|nlri| nlri.prefixes.iter().map(|&p| (p, true)))
+                .into_iter()
+                .flatten(),
+        )
+        .chain(
+            bgp_update
+                .attributes
+                .get_unreachable_nlri()
+                .map(|nlri| nlri.prefixes.iter().map(|&p| (p, false)))
+                .into_iter()
+                .flatten(),
+        )
+        .collect();
 
-            // https://datatracker.ietf.org/doc/html/rfc4760
-            let attributes = bgp_update.attributes;
-            if let Some(nlri) = attributes.get_reachable_nlri() {
-                for prefix in &nlri.prefixes {
-                    prefixes_to_update.push((*prefix, true));
-                }
-            }
-            if let Some(nlri) = attributes.get_unreachable_nlri() {
-                for prefix in &nlri.prefixes {
-                    prefixes_to_update.push((*prefix, false));
-                }
-            }
-
-            // Get the other attributes
-            let next_hop = attributes.next_hop();
-            let origin = attributes.origin();
-            let path = match attributes.as_path() {
-                Some(path) => Some(path.clone()),
-                None => None,
-            };
-            let local_preference = attributes.local_preference();
-            let med = attributes.multi_exit_discriminator();
-            let communities: Vec<MetaCommunity> = attributes.iter_communities().collect();
-
-            // Extract all BGP attributes generically
-            let bgp_attributes = extract_bgp_attributes(&attributes, &communities);
-
-            let time_bmp_header_ns = match Utc.timestamp_millis_opt(metadata.time_bmp_header_ns) {
-                MappedLocalTime::Single(dt) => dt,
-                _ => {
-                    warn!(
-                        "failed to parse timestamp: {}, using Utc::now()",
-                        metadata.time_bmp_header_ns
-                    );
-                    Utc::now()
-                }
-            };
-
-            for (prefix, announced) in prefixes_to_update {
-                updates.push(Update {
-                    time_received_ns: Utc::now(),
-                    time_bmp_header_ns,
-                    router_addr: map_to_ipv6(metadata.router_socket.ip()),
-                    router_port: metadata.router_socket.port(),
-                    peer_addr: map_to_ipv6(metadata.peer_addr),
-                    peer_bgp_id: metadata.peer_bgp_id,
-                    peer_asn: metadata.peer_asn,
-                    prefix_addr: map_to_ipv6(prefix.prefix.addr()),
-                    prefix_len: prefix.prefix.prefix_len(),
-                    is_post_policy: metadata.is_post_policy,
-                    is_adj_rib_out: metadata.is_adj_rib_out,
-                    announced,
-                    next_hop: next_hop.map(|ip| map_to_ipv6(ip)),
-                    origin: origin.to_string(),
-                    path: new_path(path.clone()),
-                    local_preference,
-                    med,
-                    communities: new_communities(&communities.clone()),
-                    synthetic: false,
-                    attributes: bgp_attributes.clone(),
-                });
-            }
-
-            Some(updates)
-        }
-        _ => None,
+    if prefixes_to_update.is_empty() {
+        return None;
     }
+
+    // Extract all attributes once
+    let attributes = &bgp_update.attributes;
+    let communities: Vec<MetaCommunity> = attributes.iter_communities().collect();
+
+    // Parse timestamp once
+    let time_bmp_header_ns = Utc
+        .timestamp_millis_opt(metadata.time_bmp_header_ns)
+        .single()
+        .unwrap_or_else(|| {
+            warn!(
+                "failed to parse timestamp: {}, using Utc::now()",
+                metadata.time_bmp_header_ns
+            );
+            Utc::now()
+        });
+
+    // Create base update template to avoid repetition
+    let base_update = Update {
+        time_received_ns: Utc::now(),
+        time_bmp_header_ns,
+        router_addr: map_to_ipv6(metadata.router_socket.ip()),
+        router_port: metadata.router_socket.port(),
+        peer_addr: map_to_ipv6(metadata.peer_addr),
+        peer_bgp_id: metadata.peer_bgp_id,
+        peer_asn: metadata.peer_asn,
+        is_post_policy: metadata.is_post_policy,
+        is_adj_rib_out: metadata.is_adj_rib_out,
+        synthetic: false,
+
+        // BGP Attributes - simple types for easy serialization
+        origin: attributes.origin().to_string(),
+        as_path: new_path(attributes.as_path().cloned()),
+        next_hop: attributes.next_hop().map(map_to_ipv6),
+        multi_exit_discriminator: attributes.multi_exit_discriminator(),
+        local_preference: attributes.local_preference(),
+        only_to_customer: attributes.only_to_customer().map(|asn| asn.to_u32()),
+        atomic_aggregate: attributes.atomic_aggregate(),
+        aggregator_asn: attributes.aggregator().map(|(asn, _)| asn.to_u32()),
+        aggregator_bgp_id: attributes.aggregator().map(|(_, id)| u32::from(id)),
+        communities: new_communities(&communities),
+        extended_communities: extract_extended_communities(&communities),
+        large_communities: extract_large_communities(&communities),
+        originator_id: attributes.origin_id().map(|id| u32::from(id)),
+        cluster_list: attributes.clusters().map_or_else(Vec::new, |c| c.to_vec()),
+        mp_reach_afi: attributes.get_reachable_nlri().map(|nlri| match nlri.afi {
+            bgpkit_parser::models::Afi::Ipv4 => 1u16,
+            bgpkit_parser::models::Afi::Ipv6 => 2u16,
+        }),
+        mp_reach_safi: attributes.get_reachable_nlri().map(|nlri| match nlri.safi {
+            bgpkit_parser::models::Safi::Unicast => 1u8,
+            bgpkit_parser::models::Safi::Multicast => 2u8,
+            _ => 0u8,
+        }),
+        mp_unreach_afi: attributes
+            .get_unreachable_nlri()
+            .map(|nlri| match nlri.afi {
+                bgpkit_parser::models::Afi::Ipv4 => 1u16,
+                bgpkit_parser::models::Afi::Ipv6 => 2u16,
+            }),
+        mp_unreach_safi: attributes
+            .get_unreachable_nlri()
+            .map(|nlri| match nlri.safi {
+                bgpkit_parser::models::Safi::Unicast => 1u8,
+                bgpkit_parser::models::Safi::Multicast => 2u8,
+                _ => 0u8,
+            }),
+
+        // These will be overridden per prefix
+        prefix_addr: std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED),
+        prefix_len: 0,
+        announced: false,
+    };
+
+    // Generate updates for each prefix
+    let updates = prefixes_to_update
+        .into_iter()
+        .map(|(prefix, announced)| Update {
+            prefix_addr: map_to_ipv6(prefix.prefix.addr()),
+            prefix_len: prefix.prefix.prefix_len(),
+            announced,
+            ..base_update.clone()
+        })
+        .collect();
+
+    Some(updates)
 }
 
 pub fn new_metadata(socket: SocketAddr, message: &BmpMessage) -> Option<UpdateMetadata> {
@@ -181,19 +237,26 @@ pub fn new_path(path: Option<AsPath>) -> Vec<u32> {
 }
 
 pub fn new_communities(communities: &[MetaCommunity]) -> Vec<(u32, u16)> {
-    let mut constructed_communities = Vec::new();
-    for community in communities {
-        match community {
+    communities
+        .iter()
+        .filter_map(|community| match community {
             MetaCommunity::Plain(community) => match community {
                 bgpkit_parser::models::Community::Custom(asn, value) => {
-                    constructed_communities.push((asn.to_u32(), *value));
+                    Some((asn.to_u32(), *value))
                 }
-                _ => (), // TODO
+                // Well-known communities use reserved ASN 65535 (0xFFFF)
+                bgpkit_parser::models::Community::NoExport => Some((0xFFFF, 0xFF01)),
+                bgpkit_parser::models::Community::NoAdvertise => Some((0xFFFF, 0xFF02)),
+                bgpkit_parser::models::Community::NoExportSubConfed => Some((0xFFFF, 0xFF03)),
             },
-            _ => (), // TODO
-        }
-    }
-    constructed_communities
+            // For extended and large communities, we could extract the first 32 bits
+            // but since the return type is (u32, u16), we'll skip them for now
+            // as they don't fit the standard community format
+            MetaCommunity::Extended(_)
+            | MetaCommunity::Ipv6Extended(_)
+            | MetaCommunity::Large(_) => None,
+        })
+        .collect()
 }
 
 pub fn map_to_ipv6(ip: IpAddr) -> IpAddr {
@@ -204,89 +267,86 @@ pub fn map_to_ipv6(ip: IpAddr) -> IpAddr {
     }
 }
 
-/// Extract BGP attributes generically using a data-driven approach
-fn extract_bgp_attributes(
-    attributes: &bgpkit_parser::models::Attributes,
-    communities: &[MetaCommunity],
-) -> Vec<(u8, Vec<u8>)> {
-    let mut bgp_attributes = Vec::new();
-    
-    // Define attribute extractors as closures for cleaner code
-    let extractors: Vec<Box<dyn Fn(&bgpkit_parser::models::Attributes) -> Option<(u8, Vec<u8>)>>> = vec![
-        // ORIGIN (Type 1)
-        Box::new(|attrs| {
-            Some((1u8, vec![attrs.origin() as u8]))
-        }),
-        
-        // AS_PATH (Type 2)
-        Box::new(|attrs| {
-            attrs.as_path().map(|as_path| {
-                let mut as_path_bytes = Vec::new();
-                for segment in &as_path.segments {
-                    for asn in segment {
-                        as_path_bytes.extend_from_slice(&asn.to_u32().to_be_bytes());
+// Helper functions for extracting community data into simple types
+fn extract_extended_communities(communities: &[MetaCommunity]) -> Vec<(u8, u8, Vec<u8>)> {
+    communities
+        .iter()
+        .filter_map(|community| match community {
+            MetaCommunity::Extended(ext_comm) => {
+                let type_byte = u8::from(ext_comm.community_type());
+                match ext_comm {
+                    bgpkit_parser::models::ExtendedCommunity::TransitiveTwoOctetAs(ec)
+                    | bgpkit_parser::models::ExtendedCommunity::NonTransitiveTwoOctetAs(ec) => {
+                        Some((
+                            type_byte,
+                            ec.subtype,
+                            [
+                                &ec.global_admin.to_u32().to_be_bytes()[2..],
+                                &ec.local_admin,
+                            ]
+                            .concat(),
+                        ))
+                    }
+                    bgpkit_parser::models::ExtendedCommunity::TransitiveIpv4Addr(ec)
+                    | bgpkit_parser::models::ExtendedCommunity::NonTransitiveIpv4Addr(ec) => {
+                        Some((
+                            type_byte,
+                            ec.subtype,
+                            [
+                                ec.global_admin.octets().as_slice(),
+                                ec.local_admin.as_slice(),
+                            ]
+                            .concat(),
+                        ))
+                    }
+                    bgpkit_parser::models::ExtendedCommunity::TransitiveFourOctetAs(ec)
+                    | bgpkit_parser::models::ExtendedCommunity::NonTransitiveFourOctetAs(ec) => {
+                        Some((
+                            type_byte,
+                            ec.subtype,
+                            [
+                                ec.global_admin.to_u32().to_be_bytes().as_slice(),
+                                ec.local_admin.as_slice(),
+                            ]
+                            .concat(),
+                        ))
+                    }
+                    bgpkit_parser::models::ExtendedCommunity::TransitiveOpaque(ec)
+                    | bgpkit_parser::models::ExtendedCommunity::NonTransitiveOpaque(ec) => {
+                        Some((type_byte, ec.subtype, ec.value.to_vec()))
+                    }
+                    bgpkit_parser::models::ExtendedCommunity::Raw(raw) => {
+                        Some((raw[0], raw[1], raw[2..].to_vec()))
                     }
                 }
-                (2u8, as_path_bytes)
-            })
-        }),
-        
-        // NEXT_HOP (Type 3)
-        Box::new(|attrs| {
-            attrs.next_hop().map(|next_hop_ip| {
-                let next_hop_bytes = match next_hop_ip {
-                    std::net::IpAddr::V4(addr) => addr.octets().to_vec(),
-                    std::net::IpAddr::V6(addr) => addr.octets().to_vec(),
-                };
-                (3u8, next_hop_bytes)
-            })
-        }),
-        
-        // MULTI_EXIT_DISC (Type 4)
-        Box::new(|attrs| {
-            attrs.multi_exit_discriminator().map(|med| {
-                (4u8, med.to_be_bytes().to_vec())
-            })
-        }),
-        
-        // LOCAL_PREF (Type 5)
-        Box::new(|attrs| {
-            attrs.local_preference().map(|local_pref| {
-                (5u8, local_pref.to_be_bytes().to_vec())
-            })
-        }),
-        
-        // ATOMIC_AGGREGATE (Type 6)
-        Box::new(|attrs| {
-            if attrs.atomic_aggregate() {
-                Some((6u8, vec![]))
-            } else {
-                None
             }
-        }),
-        
-        // AGGREGATOR (Type 7)
-        Box::new(|attrs| {
-            attrs.aggregator().map(|aggregator| {
-                let mut aggregator_bytes = Vec::new();
-                aggregator_bytes.extend_from_slice(&aggregator.0.to_u32().to_be_bytes());
-                aggregator_bytes.extend_from_slice(&aggregator.1.octets());
-                (7u8, aggregator_bytes)
-            })
-        }),
-    ];
-    
-    // Apply all extractors
-    for extractor in extractors {
-        if let Some((type_code, data)) = extractor(attributes) {
-            bgp_attributes.push((type_code, data));
-        }
-    }
-    
-    // COMMUNITIES (Type 8) - handle separately due to external parameter
-    if !communities.is_empty() {
-        bgp_attributes.push((8u8, vec![0u8; 4])); // Placeholder for now
-    }
-    
-    bgp_attributes
+            MetaCommunity::Ipv6Extended(ipv6_ext_comm) => {
+                let type_byte = u8::from(ipv6_ext_comm.community_type);
+                Some((
+                    type_byte,
+                    ipv6_ext_comm.subtype,
+                    [
+                        ipv6_ext_comm.global_admin.octets().as_slice(),
+                        &ipv6_ext_comm.local_admin,
+                    ]
+                    .concat(),
+                ))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+fn extract_large_communities(communities: &[MetaCommunity]) -> Vec<(u32, u32, u32)> {
+    communities
+        .iter()
+        .filter_map(|community| match community {
+            MetaCommunity::Large(large_comm) => Some((
+                large_comm.global_admin,
+                large_comm.local_data[0],
+                large_comm.local_data[1],
+            )),
+            _ => None,
+        })
+        .collect()
 }
