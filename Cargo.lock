@@ -1964,7 +1964,7 @@ dependencies = [
 
 [[package]]
 name = "risotto"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "bincode",
@@ -1988,7 +1988,7 @@ dependencies = [
 
 [[package]]
 name = "risotto-lib"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "bgpkit-parser",
