@@ -41,9 +41,10 @@ pub fn serialize_update(update: &Update) -> Vec<u8> {
         }
 
         // Next Hop
-        if let Some(next_hop) = update.next_hop {
-            u.set_next_hop(&serialize_ip_addr(next_hop));
-        }
+        let next_hop = update
+            .next_hop
+            .unwrap_or(IpAddr::V6(std::net::Ipv6Addr::UNSPECIFIED));
+        u.set_next_hop(&serialize_ip_addr(next_hop));
 
         // Multi Exit Discriminator
         u.set_multi_exit_disc(update.multi_exit_discriminator.unwrap_or(0));
