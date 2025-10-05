@@ -135,11 +135,11 @@ pub async fn handle(config: &KafkaConfig, mut rx: Receiver<Update>) -> Result<()
 
         let metric_name = "risotto_kafka_messages_total";
         match delivery_status {
-            Ok((partition, offset)) => {
+            Ok(delivery) => {
                 counter!(metric_name, "status" => "success").increment(1);
                 debug!(
                     "successfully sent message to partition {} at offset {}",
-                    partition, offset
+                    delivery.partition, delivery.offset
                 );
             }
             Err((error, _)) => {
