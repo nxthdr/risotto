@@ -1,7 +1,7 @@
 mod bmp;
 mod config;
-mod formatter;
 mod producer;
+mod serializer;
 mod state;
 mod update_capnp;
 
@@ -53,13 +53,13 @@ async fn producer_handler(cfg: Arc<AppConfig>, rx: Receiver<Update>) {
     }
 }
 
-async fn state_handler<T: StateStore + serde::Serialize>(
+async fn curation_state_handler<T: StateStore + serde::Serialize>(
     state: AsyncState<T>,
     cfg: Arc<AppConfig>,
 ) {
-    let state_config = cfg.state.clone();
-    if let Err(err) = state::dump_handler(state.clone(), state_config).await {
-        error!("Error dumping state: {}", err);
+    let curation_config = cfg.curation.clone();
+    if let Err(err) = state::dump_handler(state.clone(), curation_config).await {
+        error!("Error dumping curation state: {}", err);
     }
 }
 
@@ -68,23 +68,20 @@ async fn main() -> Result<()> {
     let cfg = Arc::new(configure().await?);
     trace!("{:?}", cfg);
 
-    let state_config = cfg.state.clone();
+    let curation_config = cfg.curation.clone();
     let shutdown: Shutdown = Shutdown::default();
 
-    // Initialize state if enabled
-    let state = match state_config.disable {
-        true => {
-            debug!("state is disabled");
-            None
-        }
-        false => {
-            debug!("state is enabled");
-            let store = MemoryStore::new();
-            let state = new_state(store);
-            state::load(state.clone(), state_config.clone()).await;
-            shutdown.spawn_task(state_handler(state.clone(), cfg.clone()));
-            Some(state)
-        }
+    // Initialize curation state if enabled
+    let state = if curation_config.enabled {
+        debug!("curation is enabled");
+        let store = MemoryStore::new();
+        let state = new_state(store);
+        state::load(state.clone(), curation_config.clone()).await;
+        shutdown.spawn_task(curation_state_handler(state.clone(), cfg.clone()));
+        Some(state)
+    } else {
+        debug!("curation is disabled - forwarding all updates as-is");
+        None
     };
 
     // Initialize MPSC channel to communicate between BMP tasks and producer task

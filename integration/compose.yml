@@ -48,7 +48,7 @@ services:
   # Pipeline
   risotto:
     build: ..
-    command: -v --kafka-brokers=10.0.0.100:9092 --state-path=/app/state.bin
+    command: -v --kafka-brokers=10.0.0.100:9092 --curation-state-path=/app/state.bin
     ports:
       - "8080:8080"
     networks:

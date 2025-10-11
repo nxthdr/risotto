@@ -53,6 +53,15 @@ pub struct Update {
     pub mp_unreach_safi: Option<u8>,
 }
 
+impl Update {
+    /// Generate a partition key for streaming pipelines based on router and peer
+    /// This ensures all updates for the same router/peer combination
+    /// are routed to the same partition for ordered processing
+    pub fn partition_key(&self) -> String {
+        format!("{}:{}", self.router_addr, self.peer_addr)
+    }
+}
+
 pub fn decode_updates(message: RouteMonitoring, metadata: UpdateMetadata) -> Option<Vec<Update>> {
     let bgp_update = match message.bgp_message {
         bgpkit_parser::models::BgpMessage::Update(update) => update,

@@ -9,7 +9,7 @@ use tokio::sync::mpsc::Receiver;
 use tracing::{debug, error, trace};
 
 use crate::config::KafkaConfig;
-use crate::formatter::serialize_update;
+use crate::serializer::serialize_update;
 
 #[derive(Clone)]
 pub struct SaslAuth {

@@ -6,10 +6,10 @@ use bytes::Bytes;
 use metrics::{counter, gauge};
 use rand::Rng;
 use tokio::sync::mpsc::Sender;
-use tracing::{debug, error, trace};
+use tracing::{error, trace};
 
 use crate::state::AsyncState;
-use crate::state::{peer_up_withdraws_handler, synthesize_withdraw_update};
+use crate::state::{peer_up_withdraws_handler, process_updates, synthesize_withdraw_update};
 use crate::state_store::store::StateStore;
 use crate::update::{decode_updates, Update, UpdateMetadata};
 
@@ -65,43 +65,18 @@ pub async fn route_monitoring<T: StateStore>(
     metadata: UpdateMetadata,
     body: RouteMonitoring,
 ) -> Result<()> {
-    let potential_updates = decode_updates(body, metadata.clone()).unwrap_or_default();
+    // Decode BMP RouteMonitoring message into Update structs
+    let updates = decode_updates(body, metadata.clone()).unwrap_or_default();
+
     counter!(
         "risotto_rx_updates_total",
         "router" => metadata.router_socket.ip().to_string(),
         "peer" => metadata.peer_addr.to_string(),
     )
-    .increment(potential_updates.len() as u64);
+    .increment(updates.len() as u64);
 
-    let mut legitimate_updates = Vec::new();
-    if let Some(state) = &state {
-        let mut state_lock = state.lock().await;
-        for update in potential_updates {
-            debug!("{}: {:?}", metadata.router_socket, update);
-            let is_updated = state_lock
-                .update(&metadata.router_socket.ip(), &metadata.peer_addr, &update)
-                .unwrap();
-            if is_updated {
-                legitimate_updates.push(update);
-            }
-        }
-    } else {
-        legitimate_updates = potential_updates;
-    }
-
-    counter!(
-        "risotto_tx_updates_total",
-        "router" => metadata.router_socket.ip().to_string(),
-        "peer" => metadata.peer_addr.to_string(),
-    )
-    .increment(legitimate_updates.len() as u64);
-
-    for update in legitimate_updates {
-        trace!("{:?}", update);
-
-        // Sent to the event pipeline
-        tx.send(update).await?;
-    }
+    // Process updates through state machine
+    process_updates(state, tx, updates).await?;
 
     Ok(())
 }

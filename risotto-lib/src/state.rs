@@ -198,3 +198,67 @@ pub async fn peer_up_withdraws_handler<T: StateStore>(
 
     Ok(())
 }
+
+/// Process pre-parsed updates through the state machine
+/// This is the core processing logic used by both collectors and curators
+pub async fn process_updates<T: StateStore>(
+    state: Option<AsyncState<T>>,
+    tx: Sender<Update>,
+    updates: Vec<Update>,
+) -> Result<()> {
+    if updates.is_empty() {
+        return Ok(());
+    }
+
+    match state {
+        Some(state) => {
+            // Stateful mode: deduplicate updates
+            let mut state_lock = state.lock().await;
+
+            for update in updates {
+                debug!("Processing update: {:?}", update);
+                let should_emit =
+                    state_lock.update(&update.router_addr, &update.peer_addr, &update)?;
+
+                if should_emit {
+                    trace!("Emitting update: {:?}", update);
+                    tx.send(update.clone()).await?;
+
+                    counter!(
+                        "risotto_tx_updates_total",
+                        "router" => update.router_addr.to_string(),
+                        "peer" => update.peer_addr.to_string(),
+                    )
+                    .increment(1);
+                }
+            }
+        }
+        None => {
+            // Stateless mode: forward all updates as-is
+            for update in updates {
+                trace!("Forwarding update: {:?}", update);
+
+                counter!(
+                    "risotto_tx_updates_total",
+                    "router" => update.router_addr.to_string(),
+                    "peer" => update.peer_addr.to_string(),
+                )
+                .increment(1);
+
+                tx.send(update).await?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Process a single pre-parsed update through the state machine
+/// Convenience wrapper for single update processing
+pub async fn process_update<T: StateStore>(
+    state: Option<AsyncState<T>>,
+    tx: Sender<Update>,
+    update: Update,
+) -> Result<()> {
+    process_updates(state, tx, vec![update]).await
+}

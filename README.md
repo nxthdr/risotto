@@ -28,7 +28,7 @@ docker run \
 By default, Risotto listens on port `4000` for BMP messages.
 Additionally, a Prometheus HTTP endpoint is available at `http://localhost:8080/metrics` to monitor the collector's performance and statistics.
 
-## State Management
+## Data Curation
 
 Risotto maintains a state representing connected routers and their associated BGP peers and announced prefixes. This state is dumped to a file at specified intervals.
 This state addresses two challenges when handling BMP data:
@@ -40,6 +40,12 @@ Risotto checks each incoming update against its state. If the prefix is already 
 When the collector restarts, Risotto infers any missing withdraws from the initial Peer Up sequence, ensuring the database remains accurate despite downtime. However, any announcements received after the last saved state may be replayed. In short, Risotto guarantees a consistent database state, though it may contain some duplicate announcements following a restart.
 
 Conversely, Risotto can be configured to stream updates to the event pipeline as is by disabling the state usage.
+
+## Decoupling Collection from Curation
+
+The Risotto application couples collection (parsing BMP messages) and curation (deduplication, synthetic withdraws) together for simplicity. Of course, you can disable curation to use the app as a stateless collector.
+
+Moreover, the library is designed to facilitate decoupling these two concerns, allowing you to design your data processing pipeline as needed. This enables you to build separate applications, a collector and a curator, using your own serialization format, state store implementation, and streaming platform.
 
 ## Contributing
 

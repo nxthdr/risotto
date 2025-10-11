@@ -18,6 +18,8 @@ use crate::state::AsyncState;
 use crate::state_store::store::StateStore;
 use crate::update::{new_metadata, Update};
 
+/// Process a BMP message from raw bytes
+/// This is a convenience wrapper for BMP collectors
 pub async fn process_bmp_message<T: StateStore>(
     state: Option<AsyncState<T>>,
     tx: Sender<Update>,

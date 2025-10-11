@@ -10,7 +10,7 @@ use tokio::net::lookup_host;
 pub struct AppConfig {
     pub bmp: BMPConfig,
     pub kafka: KafkaConfig,
-    pub state: StateConfig,
+    pub curation: CurationConfig,
 }
 
 #[derive(Debug, Clone)]
@@ -35,10 +35,10 @@ pub struct KafkaConfig {
 }
 
 #[derive(Debug, Clone)]
-pub struct StateConfig {
-    pub disable: bool,
-    pub path: String,
-    pub interval: u64,
+pub struct CurationConfig {
+    pub enabled: bool,
+    pub state_path: String,
+    pub state_save_interval: u64,
 }
 
 #[derive(Parser, Debug)]
@@ -100,17 +100,18 @@ pub struct Cli {
     #[arg(long, default_value = "0.0.0.0:8080")]
     pub metrics_address: String,
 
-    /// Disable state saving
+    /// Disable curation (deduplication and synthetic withdraws)
+    /// When disabled, all BMP updates are forwarded as-is without state tracking
     #[arg(long)]
-    pub state_disable: bool,
+    pub curation_disable: bool,
 
-    /// Path to save state file
+    /// Path to save curation state file
     #[arg(long, default_value = "state.bin")]
-    pub state_path: String,
+    pub curation_state_path: String,
 
-    /// Interval (in seconds) to save state
+    /// Interval (in seconds) to save curation state to disk
     #[arg(long, default_value_t = 10)]
-    pub state_interval: u64,
+    pub curation_state_interval: u64,
 
     /// Set the verbosity level
     #[command(flatten)]
@@ -217,10 +218,10 @@ pub async fn configure() -> Result<AppConfig> {
             batch_wait_interval: cli.kafka_batch_wait_interval,
             mpsc_buffer_size: cli.kafka_mpsc_buffer_size,
         },
-        state: StateConfig {
-            disable: cli.state_disable,
-            path: cli.state_path,
-            interval: cli.state_interval,
+        curation: CurationConfig {
+            enabled: !cli.curation_disable,
+            state_path: cli.curation_state_path,
+            state_save_interval: cli.curation_state_interval,
         },
     })
 }
