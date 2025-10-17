@@ -75,7 +75,7 @@ async fn test_route_monitoring() {
                 announced_prefixes: vec![
                     (NetworkPrefix {
                         prefix: "10.0.1.0/24".parse().unwrap(),
-                        path_id: 0,
+                        path_id: Some(0),
                     }),
                 ],
                 withdrawn_prefixes: vec![],
@@ -96,7 +96,7 @@ async fn test_route_monitoring() {
             is_adj_rib_out: false,
             announced: true,
             synthetic: false,
-            
+
             // BGP Attributes - structured fields
             origin: "INCOMPLETE".to_string(),
             as_path: vec![],

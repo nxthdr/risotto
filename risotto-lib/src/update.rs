@@ -148,6 +148,7 @@ pub fn decode_updates(message: RouteMonitoring, metadata: UpdateMetadata) -> Opt
         mp_reach_afi: attributes.get_reachable_nlri().map(|nlri| match nlri.afi {
             bgpkit_parser::models::Afi::Ipv4 => 1u16,
             bgpkit_parser::models::Afi::Ipv6 => 2u16,
+            bgpkit_parser::models::Afi::LinkState => 16388u16,
         }),
         mp_reach_safi: attributes.get_reachable_nlri().map(|nlri| match nlri.safi {
             bgpkit_parser::models::Safi::Unicast => 1u8,
@@ -159,6 +160,7 @@ pub fn decode_updates(message: RouteMonitoring, metadata: UpdateMetadata) -> Opt
             .map(|nlri| match nlri.afi {
                 bgpkit_parser::models::Afi::Ipv4 => 1u16,
                 bgpkit_parser::models::Afi::Ipv6 => 2u16,
+                bgpkit_parser::models::Afi::LinkState => 16388u16,
             }),
         mp_unreach_safi: attributes
             .get_unreachable_nlri()
@@ -211,7 +213,7 @@ pub fn new_metadata(socket: SocketAddr, message: &BmpMessage) -> Option<UpdateMe
     Some(UpdateMetadata {
         time_bmp_header_ns,
         router_socket: socket,
-        peer_addr: peer.peer_address,
+        peer_addr: peer.peer_ip,
         peer_bgp_id: peer.peer_bgp_id,
         peer_asn: peer.peer_asn.to_u32(),
         is_post_policy,
@@ -323,6 +325,30 @@ fn extract_extended_communities(communities: &[MetaCommunity]) -> Vec<(u8, u8, V
                     bgpkit_parser::models::ExtendedCommunity::TransitiveOpaque(ec)
                     | bgpkit_parser::models::ExtendedCommunity::NonTransitiveOpaque(ec) => {
                         Some((type_byte, ec.subtype, ec.value.to_vec()))
+                    }
+                    bgpkit_parser::models::ExtendedCommunity::FlowSpecTrafficRate(fs) => Some((
+                        type_byte,
+                        0,
+                        [
+                            &fs.as_number.to_be_bytes()[..],
+                            &fs.rate_bytes_per_sec.to_be_bytes()[..],
+                        ]
+                        .concat(),
+                    )),
+                    bgpkit_parser::models::ExtendedCommunity::FlowSpecTrafficAction(fs) => {
+                        Some((type_byte, 0, vec![fs.sample as u8, fs.terminal as u8]))
+                    }
+                    bgpkit_parser::models::ExtendedCommunity::FlowSpecRedirect(ec) => Some((
+                        type_byte,
+                        ec.subtype,
+                        [
+                            &ec.global_admin.to_u32().to_be_bytes()[2..],
+                            &ec.local_admin,
+                        ]
+                        .concat(),
+                    )),
+                    bgpkit_parser::models::ExtendedCommunity::FlowSpecTrafficMarking(fs) => {
+                        Some((type_byte, 0, vec![fs.dscp]))
                     }
                     bgpkit_parser::models::ExtendedCommunity::Raw(raw) => {
                         Some((raw[0], raw[1], raw[2..].to_vec()))
