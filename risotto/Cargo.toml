@@ -31,4 +31,4 @@ tracing = "0.1.41"
 tracing-subscriber = {version= "0.3.19", features = ["fmt", "env-filter"]}
 
 [build-dependencies]
-capnpc = "0.21.0"
+capnpc = "0.22.0"
