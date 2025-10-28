@@ -15,7 +15,7 @@ exclude.workspace = true
 anyhow = "1.0.95"
 bincode = { version = "2.0.1", features = ["serde"] }
 bytes = "1.9.0"
-capnp = "0.21.0"
+capnp = "0.22.0"
 chrono = "0.4.40"
 clap = { version = "4.5.23", features = ["derive"] }
 clap-verbosity-flag = {version = "3.0.2", features = ["tracing"]}
