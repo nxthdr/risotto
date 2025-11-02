@@ -296,12 +296,21 @@ dependencies = [
 ]
 
 [[package]]
-name = "capnpc"
-version = "0.22.0"
+name = "capnp"
+version = "0.23.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1af1ceeadd28bef56425e170308d287dad0e28f43978cd6b02d3bb1bf7b822fe"
+checksum = "bbffb6e69e1ea2cf518ac5037a78a223ecb82b4ac81e7ab33cb5211b43d712ac"
 dependencies = [
- "capnp",
+ "embedded-io",
+]
+
+[[package]]
+name = "capnpc"
+version = "0.23.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3f1cd4f042d6725da6245bde08c9e7c74f6fcb2d8bd5e0378e57991be8d711d8"
+dependencies = [
+ "capnp 0.23.0",
 ]
 
 [[package]]
@@ -1240,7 +1249,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "07033963ba89ebaf1584d767badaa2e8fcec21aedea6b8c0346d487d49c28667"
 dependencies = [
  "cfg-if",
- "windows-targets 0.52.6",
+ "windows-targets 0.53.4",
 ]
 
 [[package]]
@@ -1706,7 +1715,7 @@ dependencies = [
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.52.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -1905,7 +1914,7 @@ dependencies = [
  "anyhow",
  "bincode",
  "bytes",
- "capnp",
+ "capnp 0.22.0",
  "capnpc",
  "chrono",
  "clap",
