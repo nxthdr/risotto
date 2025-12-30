@@ -1194,12 +1194,12 @@ pub mod update {
     pub fn get_annotation_types(child_index: Option<u16>, index: u32) -> ::capnp::introspect::Type {
       ::capnp::introspect::panic_invalid_annotation_indices(child_index, index)
     }
-    pub static RAW_SCHEMA: ::capnp::introspect::RawStructSchema = ::capnp::introspect::RawStructSchema {
-      encoded_node: &ENCODED_NODE,
-      nonunion_members: NONUNION_MEMBERS,
-      members_by_discriminant: MEMBERS_BY_DISCRIMINANT,
-      members_by_name: MEMBERS_BY_NAME,
-    };
+    pub static RAW_SCHEMA: ::capnp::introspect::RawStructSchema = unsafe {::capnp::introspect::RawStructSchema::new(
+      &ENCODED_NODE,
+      NONUNION_MEMBERS,
+      MEMBERS_BY_DISCRIMINANT,
+      MEMBERS_BY_NAME
+    )};
     pub static NONUNION_MEMBERS : &[u16] = &[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30];
     pub static MEMBERS_BY_DISCRIMINANT : &[u16] = &[];
     pub static MEMBERS_BY_NAME : &[u16] = &[20,21,11,14,19,26,22,23,10,9,24,17,27,28,29,30,16,15,18,13,25,4,6,5,7,8,2,3,12,1,0];
@@ -1417,12 +1417,12 @@ pub mod community {
     pub fn get_annotation_types(child_index: Option<u16>, index: u32) -> ::capnp::introspect::Type {
       ::capnp::introspect::panic_invalid_annotation_indices(child_index, index)
     }
-    pub static RAW_SCHEMA: ::capnp::introspect::RawStructSchema = ::capnp::introspect::RawStructSchema {
-      encoded_node: &ENCODED_NODE,
-      nonunion_members: NONUNION_MEMBERS,
-      members_by_discriminant: MEMBERS_BY_DISCRIMINANT,
-      members_by_name: MEMBERS_BY_NAME,
-    };
+    pub static RAW_SCHEMA: ::capnp::introspect::RawStructSchema = unsafe {::capnp::introspect::RawStructSchema::new(
+      &ENCODED_NODE,
+      NONUNION_MEMBERS,
+      MEMBERS_BY_DISCRIMINANT,
+      MEMBERS_BY_NAME
+    )};
     pub static NONUNION_MEMBERS : &[u16] = &[0,1];
     pub static MEMBERS_BY_DISCRIMINANT : &[u16] = &[];
     pub static MEMBERS_BY_NAME : &[u16] = &[0,1];
@@ -1682,12 +1682,12 @@ pub mod extended_community {
     pub fn get_annotation_types(child_index: Option<u16>, index: u32) -> ::capnp::introspect::Type {
       ::capnp::introspect::panic_invalid_annotation_indices(child_index, index)
     }
-    pub static RAW_SCHEMA: ::capnp::introspect::RawStructSchema = ::capnp::introspect::RawStructSchema {
-      encoded_node: &ENCODED_NODE,
-      nonunion_members: NONUNION_MEMBERS,
-      members_by_discriminant: MEMBERS_BY_DISCRIMINANT,
-      members_by_name: MEMBERS_BY_NAME,
-    };
+    pub static RAW_SCHEMA: ::capnp::introspect::RawStructSchema = unsafe {::capnp::introspect::RawStructSchema::new(
+      &ENCODED_NODE,
+      NONUNION_MEMBERS,
+      MEMBERS_BY_DISCRIMINANT,
+      MEMBERS_BY_NAME
+    )};
     pub static NONUNION_MEMBERS : &[u16] = &[0,1,2];
     pub static MEMBERS_BY_DISCRIMINANT : &[u16] = &[];
     pub static MEMBERS_BY_NAME : &[u16] = &[0,1,2];
@@ -1937,12 +1937,12 @@ pub mod large_community {
     pub fn get_annotation_types(child_index: Option<u16>, index: u32) -> ::capnp::introspect::Type {
       ::capnp::introspect::panic_invalid_annotation_indices(child_index, index)
     }
-    pub static RAW_SCHEMA: ::capnp::introspect::RawStructSchema = ::capnp::introspect::RawStructSchema {
-      encoded_node: &ENCODED_NODE,
-      nonunion_members: NONUNION_MEMBERS,
-      members_by_discriminant: MEMBERS_BY_DISCRIMINANT,
-      members_by_name: MEMBERS_BY_NAME,
-    };
+    pub static RAW_SCHEMA: ::capnp::introspect::RawStructSchema = unsafe {::capnp::introspect::RawStructSchema::new(
+      &ENCODED_NODE,
+      NONUNION_MEMBERS,
+      MEMBERS_BY_DISCRIMINANT,
+      MEMBERS_BY_NAME
+    )};
     pub static NONUNION_MEMBERS : &[u16] = &[0,1,2];
     pub static MEMBERS_BY_DISCRIMINANT : &[u16] = &[];
     pub static MEMBERS_BY_NAME : &[u16] = &[0,1,2];
