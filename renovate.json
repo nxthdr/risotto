@@ -9,6 +9,11 @@
       "matchUpdateTypes": ["minor", "patch", "digest"],
       "automergeType": "branch",
       "automerge": true
+    },
+    {
+      "matchPackageNames": ["bincode"],
+      "allowedVersions": "2.x",
+      "description": "Stay on bincode 2.x - version 3.0.0 is intentionally broken by maintainer"
     }
   ]
 }
