@@ -15,7 +15,7 @@ exclude.workspace = true
 anyhow = "1.0.95"
 postcard = { version = "1.0", features = ["alloc"] }
 bytes = "1.9.0"
-capnp = "0.24.0"
+capnp = "0.25.0"
 chrono = "0.4.40"
 clap = { version = "4.5.23", features = ["derive"] }
 clap-verbosity-flag = {version = "3.0.2", features = ["tracing"]}
@@ -31,4 +31,4 @@ tracing = "0.1.41"
 tracing-subscriber = {version= "0.3.19", features = ["fmt", "env-filter"]}
 
 [build-dependencies]
-capnpc = "0.24.0"
+capnpc = "0.25.0"
