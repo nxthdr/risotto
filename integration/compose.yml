@@ -26,7 +26,7 @@ services:
 
   # Bird
   bird30:
-    image: ghcr.io/nxthdr/bird:2.16
+    image: ghcr.io/nxthdr/bird:2.18-adj-rib-out
     volumes:
       - ./config/bird/bird30.conf:/etc/bird/bird.conf:ro
     networks:
@@ -36,7 +36,7 @@ services:
       - risotto
 
   bird40:
-    image: ghcr.io/nxthdr/bird:2.16
+    image: ghcr.io/nxthdr/bird:2.18-adj-rib-out
     volumes:
       - ./config/bird/bird40.conf:/etc/bird/bird.conf:ro
     networks:
