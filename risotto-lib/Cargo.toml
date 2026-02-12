@@ -17,7 +17,7 @@ bgpkit-parser = { version = "0.15.0", features = ["serde"] }
 bytes = "1.9.0"
 chrono = "0.4.39"
 metrics = "0.24.2"
-rand = "0.9.0"
+rand = "0.10.0"
 serde = { version = "1.0.217", features = ["derive"] }
 tokio = { version = "1.42.0", features = ["macros"] }
 tracing = "0.1.41"
