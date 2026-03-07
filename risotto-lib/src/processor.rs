@@ -4,7 +4,7 @@ use bgpkit_parser::parse_bmp_msg;
 use bgpkit_parser::parser::bmp::messages::BmpMessage;
 use bytes::Bytes;
 use metrics::{counter, gauge};
-use rand::Rng;
+use rand::RngExt;
 use tokio::sync::mpsc::Sender;
 use tracing::{error, trace};
 
