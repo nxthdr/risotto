@@ -9,6 +9,11 @@
       "matchUpdateTypes": ["minor", "patch", "digest"],
       "automergeType": "branch",
       "automerge": true
+    },
+    {
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["major"],
+      "automerge": true
     }
   ]
 }
