@@ -19,7 +19,7 @@ fn default_open_message() -> BgpOpenMessage {
         version: 0,
         asn: Asn::from(0),
         hold_time: 0,
-        sender_ip: Ipv4Addr::from_str("0.0.0.0").unwrap(),
+        bgp_identifier: Ipv4Addr::from_str("0.0.0.0").unwrap(),
         extended_length: false,
         opt_params: vec![],
     }
