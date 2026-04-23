@@ -4,6 +4,17 @@
     "config:recommended"
   ],
 
+  "lockFileMaintenance": {
+    "enabled": true,
+    "automerge": true,
+    "schedule": ["before 6am on monday"]
+  },
+
+  "vulnerabilityAlerts": {
+    "enabled": true,
+    "labels": ["security"]
+  },
+
   "packageRules": [
     {
       "matchUpdateTypes": ["minor", "patch", "digest"],
