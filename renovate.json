@@ -17,6 +17,10 @@
 
   "packageRules": [
     {
+      "matchPackageNames": ["capnp", "capnpc"],
+      "groupName": "capnp"
+    },
+    {
       "matchUpdateTypes": ["minor", "patch", "digest"],
       "automergeType": "branch",
       "automerge": true
