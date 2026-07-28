@@ -134,9 +134,9 @@ checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
 name = "bgpkit-parser"
-version = "0.18.0"
+version = "0.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "69d67aa5093677071e8e702b469dba28f20f47ce703f600357e3f01dbb82f67a"
+checksum = "919df0ca6e4c6469bba59cd23051e9bc5ef63470ae4e2f4e9b925d2fcf29621e"
 dependencies = [
  "bitflags",
  "bytes",
@@ -1282,9 +1282,9 @@ checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 
 [[package]]
 name = "oneio"
-version = "0.23.0"
+version = "0.24.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b29ec2e492d1f3350fa4b5701dbac89544a521c755b99d1667dd98c3cdd5984a"
+checksum = "34fd427fd9962a9bf2d99da1b6cbc71ae72aec49c90723a4944128462d021ac2"
 dependencies = [
  "bzip2",
  "dotenvy",
@@ -1293,6 +1293,7 @@ dependencies = [
  "rustls",
  "suppaftp",
  "thiserror",
+ "zstd",
 ]
 
 [[package]]
@@ -2805,3 +2806,31 @@ name = "zmij"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "29666d0abbfad1e3dc4dcf6144730dd3a3ab225bbbdac83319345b1b44ccfc1b"
+
+[[package]]
+name = "zstd"
+version = "0.13.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e91ee311a569c327171651566e07972200e76fcfe2242a4fa446149a3881c08a"
+dependencies = [
+ "zstd-safe",
+]
+
+[[package]]
+name = "zstd-safe"
+version = "7.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8f49c4d5f0abb602a93fb8736af2a4f4dd9512e36f7f570d66e65ff867ed3b9d"
+dependencies = [
+ "zstd-sys",
+]
+
+[[package]]
+name = "zstd-sys"
+version = "2.0.16+zstd.1.5.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "91e19ebc2adc8f83e43039e79776e3fda8ca919132d68a1fed6a5faca2683748"
+dependencies = [
+ "cc",
+ "pkg-config",
+]
