@@ -132,7 +132,7 @@ pub fn decode_updates(message: RouteMonitoring, metadata: UpdateMetadata) -> Opt
 
         // BGP Attributes - simple types for easy serialization
         origin: attributes.origin().to_string(),
-        as_path: new_path(attributes.as_path().cloned()),
+        as_path: new_path(attributes.effective_as_path()),
         next_hop: attributes.next_hop().map(map_to_ipv6),
         multi_exit_discriminator: attributes.multi_exit_discriminator(),
         local_preference: attributes.local_preference(),
@@ -350,6 +350,16 @@ fn extract_extended_communities(communities: &[MetaCommunity]) -> Vec<(u8, u8, V
                     bgpkit_parser::models::ExtendedCommunity::FlowSpecTrafficMarking(fs) => {
                         Some((type_byte, 0, vec![fs.dscp]))
                     }
+                    // RFC 10005 link bandwidth: 2-octet global admin + IEEE-754 bandwidth
+                    bgpkit_parser::models::ExtendedCommunity::LinkBandwidth(lb) => Some((
+                        type_byte,
+                        0x04,
+                        [
+                            lb.global_admin.to_be_bytes().as_slice(),
+                            lb.bandwidth.to_be_bytes().as_slice(),
+                        ]
+                        .concat(),
+                    )),
                     bgpkit_parser::models::ExtendedCommunity::Raw(raw) => {
                         Some((raw[0], raw[1], raw[2..].to_vec()))
                     }
