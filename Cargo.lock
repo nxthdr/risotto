@@ -187,9 +187,9 @@ dependencies = [
 
 [[package]]
 name = "capnp"
-version = "0.27.0"
+version = "0.27.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6ebfc0da565e747b1640e029bfbda72f61f39fcddfc8b465b4ae3f3e8b649f78"
+checksum = "44ddc4994c02fbfb9c8aa1b6a35f620f5c73b9fb4c3415edff000a69e356e5a0"
 dependencies = [
  "embedded-io 0.7.1",
 ]
