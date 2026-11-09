@@ -134,9 +134,9 @@ checksum = "ac07cdecf99051d9a5238b80f35af32cdeba5b336e55d957b318b50137e18da5"
 
 [[package]]
 name = "bgpkit-parser"
-version = "0.23.0"
+version = "0.24.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f26438a146a77e493f9a59fca58e7a29face3581d8c2d8ba4b7f5e3c49639cc0"
+checksum = "18ccb5da094080efab0319e347158d8f74d3f772ea1738e8b161cc9e28078fb3"
 dependencies = [
  "bitflags",
  "bytes",
@@ -1269,9 +1269,9 @@ checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 
 [[package]]
 name = "oneio"
-version = "0.26.1"
+version = "0.27.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8d77cbb0c450f4324612bc361ad472ee632dc4fb86d8ebe3275949f4321a5b6b"
+checksum = "430b0879fae9a8c1f64ec74a7b1d87edb9c27fc516ceb521ee2e90996ce95624"
 dependencies = [
  "bzip2",
  "dotenvy",
