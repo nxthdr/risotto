@@ -145,30 +145,18 @@ pub fn decode_updates(message: RouteMonitoring, metadata: UpdateMetadata) -> Opt
         large_communities: extract_large_communities(&communities),
         originator_id: attributes.origin_id().map(|id| u32::from(id)),
         cluster_list: attributes.clusters().map_or_else(Vec::new, |c| c.to_vec()),
-        mp_reach_afi: attributes.get_reachable_nlri().map(|nlri| match nlri.afi {
-            bgpkit_parser::models::Afi::Ipv4 => 1u16,
-            bgpkit_parser::models::Afi::Ipv6 => 2u16,
-            bgpkit_parser::models::Afi::LinkState => 16388u16,
-        }),
-        mp_reach_safi: attributes.get_reachable_nlri().map(|nlri| match nlri.safi {
-            bgpkit_parser::models::Safi::Unicast => 1u8,
-            bgpkit_parser::models::Safi::Multicast => 2u8,
-            _ => 0u8,
-        }),
+        mp_reach_afi: attributes
+            .get_reachable_nlri()
+            .map(|nlri| u16::from(nlri.afi)),
+        mp_reach_safi: attributes
+            .get_reachable_nlri()
+            .map(|nlri| u8::from(nlri.safi)),
         mp_unreach_afi: attributes
             .get_unreachable_nlri()
-            .map(|nlri| match nlri.afi {
-                bgpkit_parser::models::Afi::Ipv4 => 1u16,
-                bgpkit_parser::models::Afi::Ipv6 => 2u16,
-                bgpkit_parser::models::Afi::LinkState => 16388u16,
-            }),
+            .map(|nlri| u16::from(nlri.afi)),
         mp_unreach_safi: attributes
             .get_unreachable_nlri()
-            .map(|nlri| match nlri.safi {
-                bgpkit_parser::models::Safi::Unicast => 1u8,
-                bgpkit_parser::models::Safi::Multicast => 2u8,
-                _ => 0u8,
-            }),
+            .map(|nlri| u8::from(nlri.safi)),
 
         // These will be overridden per prefix
         prefix_addr: std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED),
@@ -350,6 +338,16 @@ fn extract_extended_communities(communities: &[MetaCommunity]) -> Vec<(u8, u8, V
                     bgpkit_parser::models::ExtendedCommunity::FlowSpecTrafficMarking(fs) => {
                         Some((type_byte, 0, vec![fs.dscp]))
                     }
+                    // RFC 7432 MAC Mobility: flags (bit 0 = sticky), reserved, 4-octet sequence
+                    bgpkit_parser::models::ExtendedCommunity::MacMobility(mm) => Some((
+                        type_byte,
+                        0x00,
+                        [
+                            [u8::from(mm.sticky), 0u8].as_slice(),
+                            mm.sequence.to_be_bytes().as_slice(),
+                        ]
+                        .concat(),
+                    )),
                     // RFC 10005 link bandwidth: 2-octet global admin + IEEE-754 bandwidth
                     bgpkit_parser::models::ExtendedCommunity::LinkBandwidth(lb) => Some((
                         type_byte,
