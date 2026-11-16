@@ -151,11 +151,9 @@ pub fn decode_updates(message: RouteMonitoring, metadata: UpdateMetadata) -> Opt
             bgpkit_parser::models::Afi::L2vpn => 25u16,
             bgpkit_parser::models::Afi::LinkState => 16388u16,
         }),
-        mp_reach_safi: attributes.get_reachable_nlri().map(|nlri| match nlri.safi {
-            bgpkit_parser::models::Safi::Unicast => 1u8,
-            bgpkit_parser::models::Safi::Multicast => 2u8,
-            _ => 0u8,
-        }),
+        mp_reach_safi: attributes
+            .get_reachable_nlri()
+            .map(|nlri| u8::from(nlri.safi)),
         mp_unreach_afi: attributes
             .get_unreachable_nlri()
             .map(|nlri| match nlri.afi {
@@ -166,11 +164,7 @@ pub fn decode_updates(message: RouteMonitoring, metadata: UpdateMetadata) -> Opt
             }),
         mp_unreach_safi: attributes
             .get_unreachable_nlri()
-            .map(|nlri| match nlri.safi {
-                bgpkit_parser::models::Safi::Unicast => 1u8,
-                bgpkit_parser::models::Safi::Multicast => 2u8,
-                _ => 0u8,
-            }),
+            .map(|nlri| u8::from(nlri.safi)),
 
         // These will be overridden per prefix
         prefix_addr: std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED),
