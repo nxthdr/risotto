@@ -145,23 +145,15 @@ pub fn decode_updates(message: RouteMonitoring, metadata: UpdateMetadata) -> Opt
         large_communities: extract_large_communities(&communities),
         originator_id: attributes.origin_id().map(|id| u32::from(id)),
         cluster_list: attributes.clusters().map_or_else(Vec::new, |c| c.to_vec()),
-        mp_reach_afi: attributes.get_reachable_nlri().map(|nlri| match nlri.afi {
-            bgpkit_parser::models::Afi::Ipv4 => 1u16,
-            bgpkit_parser::models::Afi::Ipv6 => 2u16,
-            bgpkit_parser::models::Afi::L2vpn => 25u16,
-            bgpkit_parser::models::Afi::LinkState => 16388u16,
-        }),
+        mp_reach_afi: attributes
+            .get_reachable_nlri()
+            .map(|nlri| u16::from(nlri.afi)),
         mp_reach_safi: attributes
             .get_reachable_nlri()
             .map(|nlri| u8::from(nlri.safi)),
         mp_unreach_afi: attributes
             .get_unreachable_nlri()
-            .map(|nlri| match nlri.afi {
-                bgpkit_parser::models::Afi::Ipv4 => 1u16,
-                bgpkit_parser::models::Afi::Ipv6 => 2u16,
-                bgpkit_parser::models::Afi::L2vpn => 25u16,
-                bgpkit_parser::models::Afi::LinkState => 16388u16,
-            }),
+            .map(|nlri| u16::from(nlri.afi)),
         mp_unreach_safi: attributes
             .get_unreachable_nlri()
             .map(|nlri| u8::from(nlri.safi)),
