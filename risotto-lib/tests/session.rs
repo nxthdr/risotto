@@ -13,7 +13,7 @@ use chrono::DateTime;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::str::FromStr;
 
-use risotto_lib::event::{EventBody, MessageType, TERMINATION_REASON_UNSPECIFIED};
+use risotto_lib::event::{EventBody, MessageType, SessionEnd, TERMINATION_REASON_UNSPECIFIED};
 use risotto_lib::BmpSession;
 
 fn session() -> BmpSession {
@@ -126,17 +126,24 @@ fn route_monitoring_is_flattened_per_prefix() {
 }
 
 #[test]
-fn end_of_rib_is_not_forwarded() {
+fn end_of_rib_is_an_event() {
     // RFC 4724: an UPDATE with no prefixes and no attributes is the IPv4 unicast End-of-RIB
     let body = BmpMessageBody::RouteMonitoring(BmpRouteMonitoring {
         bgp_message: BgpMessage::Update(BgpUpdateMessage::default()),
     });
     let msg = message(
         BmpMsgType::RouteMonitoring,
-        Some(peer_header(PeerFlags::empty())),
+        Some(peer_header(PeerFlags::IS_POST_POLICY)),
         body,
     );
-    assert!(session().process(msg).unwrap().is_empty());
+    let events = session().process(msg).unwrap();
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].body.message_type(), MessageType::RouteMonitoring);
+    let EventBody::EndOfRib(header, eor) = &events[0].body else {
+        panic!("expected end of rib");
+    };
+    assert!(header.is_post_policy);
+    assert_eq!((eor.afi, eor.safi), (1, 1));
 }
 
 #[test]
@@ -208,15 +215,19 @@ fn peer_down_decodes_notification() {
 #[test]
 fn close_without_termination_is_synthetic() {
     let mut session = session();
-    let event = session.close().expect("synthetic termination");
+    let event = session
+        .close(SessionEnd::ConnectionClosed)
+        .expect("synthetic termination");
     assert!(event.synthetic);
     let EventBody::Termination(termination) = &event.body else {
         panic!("expected termination");
     };
     assert_eq!(termination.reason, Some(TERMINATION_REASON_UNSPECIFIED));
+    assert_eq!(termination.information[0].info_type, 0);
+    assert_eq!(termination.information[0].value, "connection closed");
 
     // Closing twice does not emit a second termination
-    assert!(session.close().is_none());
+    assert!(session.close(SessionEnd::ConnectionClosed).is_none());
 }
 
 #[test]
@@ -237,7 +248,7 @@ fn close_after_termination_emits_nothing() {
     };
     assert!(!events[0].synthetic);
     assert_eq!(termination.reason, Some(0));
-    assert!(session.close().is_none());
+    assert!(session.close(SessionEnd::ConnectionClosed).is_none());
 }
 
 fn peer_up() -> BmpMessageBody {
@@ -285,7 +296,7 @@ fn route(session: &mut BmpSession, flags: PeerFlags, body: BmpMessageBody) -> bo
     rm.initial_dump
 }
 
-/// Process an End-of-RIB marker, which yields no event.
+/// Process an End-of-RIB marker.
 fn eor(session: &mut BmpSession, flags: PeerFlags) {
     let events = session
         .process(message(
@@ -294,7 +305,7 @@ fn eor(session: &mut BmpSession, flags: PeerFlags) {
             end_of_rib(),
         ))
         .unwrap();
-    assert!(events.is_empty());
+    assert!(matches!(events[0].body, EventBody::EndOfRib(..)));
 }
 
 #[test]
@@ -374,9 +385,19 @@ fn events_are_numbered_per_session() {
             }),
         ))
         .unwrap();
-    let termination = session.close().unwrap();
+    let termination = session.close(SessionEnd::ConnectionClosed).unwrap();
     assert_eq!(
         [events[0].sequence, events[1].sequence, termination.sequence],
         [0, 1, 2]
     );
+}
+
+#[test]
+fn collector_start_has_no_router() {
+    let time = DateTime::from_timestamp(1_700_000_000, 0).unwrap();
+    let event = risotto_lib::collector_start(time);
+    assert_eq!(event.body.message_type() as u8, 255);
+    assert!(event.synthetic);
+    assert!(event.body.peer_header().is_none());
+    assert_eq!(event.session_start, time);
 }

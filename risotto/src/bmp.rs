@@ -6,24 +6,34 @@ use std::net::{IpAddr, SocketAddr};
 use tokio::io::AsyncReadExt;
 use tokio::net::TcpStream;
 use tokio::sync::mpsc::Sender;
+use tokio_graceful::ShutdownGuard;
 use tracing::{debug, error, trace};
 
-use risotto_lib::event::{Event, EventBody};
+use risotto_lib::event::{Event, EventBody, SessionEnd};
 use risotto_lib::BmpSession;
 
-/// Handle a BMP connection until it ends, then emit a synthetic Termination
-/// event if the router did not send one.
-pub async fn handle(stream: &mut TcpStream, tx: Sender<Event>) -> Result<()> {
+/// Handle a BMP connection until it ends or the collector shuts down, then emit
+/// a synthetic Termination event if the router did not send one.
+pub async fn handle(stream: &mut TcpStream, tx: Sender<Event>, guard: ShutdownGuard) -> Result<()> {
     let socket = stream.peer_addr()?;
     debug!("{}: session established", socket);
 
     let mut session = BmpSession::new(socket);
     let mut peers = HashSet::new();
 
-    let result = read_messages(stream, socket, &mut session, &mut peers, &tx).await;
+    let (result, end) = tokio::select! {
+        result = read_messages(stream, socket, &mut session, &mut peers, &tx) => {
+            (result, SessionEnd::ConnectionClosed)
+        }
+        _ = guard.cancelled() => (Ok(()), SessionEnd::CollectorShutdown),
+    };
 
-    if let Some(event) = session.close() {
-        debug!("{}: session ended without Termination message", socket);
+    if let Some(event) = session.close(end) {
+        debug!(
+            "{}: session ended without Termination message ({})",
+            socket,
+            end.as_str()
+        );
         emit(event, socket, &mut peers, &tx).await?;
     }
 

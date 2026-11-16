@@ -82,10 +82,11 @@ impl BmpSession {
         let bodies = match message.message_body {
             BmpMessageBody::RouteMonitoring(body) => {
                 let header = peer_header()?;
-                // End-of-RIB markers only end the initial dump, they are not forwarded
+                // End-of-RIB markers end the initial dump of their RIB view and family
                 if let Some((afi, safi)) = end_of_rib_family(&body) {
                     self.end_initial_dump(&header, afi, safi);
-                    return Ok(Vec::new());
+                    let body = EventBody::EndOfRib(header, EndOfRib { afi, safi });
+                    return Ok(vec![self.event(body, false)]);
                 }
                 decode_route_monitoring(body)
                     .into_iter()
@@ -128,16 +129,19 @@ impl BmpSession {
 
     /// Close the session. Returns a synthetic Termination event if the router
     /// did not send a Termination message, so downstream consumers know that
-    /// the session ended. This is a loss of observability, not a Peer Down:
-    /// the BGP sessions of the router are not known to have gone down.
-    pub fn close(&mut self) -> Option<Event> {
+    /// the session ended, and why (`end`). This is a loss of observability, not
+    /// a Peer Down: the BGP sessions of the router are not known to have gone down.
+    pub fn close(&mut self, end: SessionEnd) -> Option<Event> {
         if self.terminated {
             return None;
         }
         self.terminated = true;
         let body = EventBody::Termination(Termination {
             reason: Some(TERMINATION_REASON_UNSPECIFIED),
-            information: vec![],
+            information: vec![InformationTlv {
+                info_type: 0, // string (RFC 7854 section 4.4)
+                value: end.as_str().to_string(),
+            }],
         });
         Some(self.event(body, true))
     }
@@ -175,6 +179,19 @@ impl BmpSession {
             synthetic,
             body,
         }
+    }
+}
+
+/// Event to emit when the collector starts: BMP sessions established before it are over.
+pub fn collector_start(time: DateTime<Utc>) -> Event {
+    Event {
+        time_received: time,
+        router_addr: IpAddr::V6(std::net::Ipv6Addr::UNSPECIFIED),
+        router_port: 0,
+        session_start: time,
+        sequence: 0,
+        synthetic: true,
+        body: EventBody::CollectorStart,
     }
 }
 

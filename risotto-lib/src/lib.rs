@@ -10,4 +10,4 @@ pub mod route_monitoring;
 pub mod session;
 
 pub use event::{Event, EventBody, MessageType};
-pub use session::{decode_bmp_message, BmpSession};
+pub use session::{collector_start, decode_bmp_message, BmpSession};

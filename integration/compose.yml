@@ -69,7 +69,7 @@ services:
         ipv4_address: 10.0.0.100
 
   clickhouse:
-    image: clickhouse/clickhouse-server:latest
+    image: clickhouse/clickhouse-server:26.5.1 # version deployed by the infrastructure
     volumes:
       - ./config/clickhouse/docker-entrypoint-initdb.d:/docker-entrypoint-initdb.d
       - ../risotto/schemas:/var/lib/clickhouse/format_schemas

@@ -85,6 +85,13 @@ CREATE TABLE bmp.from_kafka
     termination Tuple(
         reason      UInt16,
         information Array(Tuple(infoType UInt16, value String))
+    ),
+
+    -- End-of-RIB markers are Route Monitoring messages (messageType 0) with this
+    -- body set instead of routeMonitoring. An unset body reads as afi = 0.
+    endOfRib Tuple(
+        afi  UInt16,
+        safi UInt8
     )
 )
 ENGINE = Kafka()
@@ -196,10 +203,62 @@ SELECT
     routeMonitoring.mpUnreachAfi AS mp_unreach_afi,
     routeMonitoring.mpUnreachSafi AS mp_unreach_safi
 FROM bmp.from_kafka
-WHERE messageType = 0;
+WHERE messageType = 0 AND endOfRib.afi = 0;
+
+-- End-of-RIB markers (RFC 4724): the table dump of a peer's RIB view
+-- (pre/post-policy, Adj-RIB-In/Out) and address family is complete.
+CREATE TABLE bmp.end_of_ribs
+(
+    date                Date,
+    time_inserted_ns    DateTime64(9),
+    time_received_ns    DateTime64(9),
+    time_bmp_header_ns  DateTime64(9),
+    session_start_ns    DateTime64(9),
+    sequence            UInt64,
+
+    router_addr         IPv6,
+    router_port         UInt16,
+    peer_type           UInt8,
+    peer_distinguisher  UInt64,
+    peer_addr           IPv6,
+    peer_bgp_id         IPv4,
+    peer_asn            UInt32,
+    is_post_policy      Bool,
+    is_adj_rib_out      Bool,
+
+    afi                 UInt16,
+    safi                UInt8
+)
+ENGINE = MergeTree()
+ORDER BY (time_received_ns, router_addr, peer_addr)
+PARTITION BY date
+TTL date + INTERVAL 7 DAY DELETE;
+
+CREATE MATERIALIZED VIEW bmp.end_of_ribs_mv TO bmp.end_of_ribs AS
+SELECT
+    toDate(fromUnixTimestamp64Nano(toInt64(timeReceivedNs))) AS date,
+    now64(9) AS time_inserted_ns,
+    fromUnixTimestamp64Nano(toInt64(timeReceivedNs)) AS time_received_ns,
+    fromUnixTimestamp64Nano(toInt64(peerHeader.timestampNs)) AS time_bmp_header_ns,
+    fromUnixTimestamp64Nano(toInt64(sessionStartNs)) AS session_start_ns,
+    sequence,
+
+    routerAddr AS router_addr,
+    routerPort AS router_port,
+    peerHeader.peerType AS peer_type,
+    peerHeader.peerDistinguisher AS peer_distinguisher,
+    CAST(peerHeader.peerAddr AS IPv6) AS peer_addr,
+    peerHeader.peerBgpId AS peer_bgp_id,
+    peerHeader.peerAsn AS peer_asn,
+    peerHeader.isPostPolicy AS is_post_policy,
+    peerHeader.isAdjRibOut AS is_adj_rib_out,
+
+    endOfRib.afi AS afi,
+    endOfRib.safi AS safi
+FROM bmp.from_kafka
+WHERE messageType = 0 AND endOfRib.afi != 0;
 
 -- Peer Up and Peer Down notifications.
--- Kept without TTL: they are low volume and needed to reconstruct peer sessions.
 CREATE TABLE bmp.peer_events
 (
     date                  Date,
@@ -238,7 +297,8 @@ CREATE TABLE bmp.peer_events
 )
 ENGINE = MergeTree()
 ORDER BY (router_addr, peer_addr, time_received_ns)
-PARTITION BY toYYYYMM(date);
+PARTITION BY date
+TTL date + INTERVAL 7 DAY DELETE;
 
 CREATE MATERIALIZED VIEW bmp.peer_events_mv TO bmp.peer_events AS
 SELECT
@@ -277,8 +337,11 @@ FROM bmp.from_kafka
 WHERE messageType IN (2, 3);
 
 -- Initiation and Termination messages: start and end of BMP sessions.
--- A synthetic Termination is emitted by Risotto when the connection ends
--- without a Termination message (router crash, network failure, collector restart).
+-- A synthetic Termination is emitted by Risotto when a session ends without a
+-- Termination message; its information says why ('connection closed' or
+-- 'collector shutdown'). Risotto also records when it starts (`collector_start`,
+-- no router): sessions established before it are over, even without Termination
+-- (e.g. when the collector crashed).
 CREATE TABLE bmp.sessions
 (
     date                Date,
@@ -291,13 +354,14 @@ CREATE TABLE bmp.sessions
     router_port         UInt16,
     synthetic           Bool,
 
-    event               Enum8('initiation' = 4, 'termination' = 5),
+    event               Enum16('initiation' = 4, 'termination' = 5, 'collector_start' = 255),
     termination_reason  UInt16,
     information         Array(Tuple(info_type UInt16, value String))
 )
 ENGINE = MergeTree()
 ORDER BY (router_addr, time_received_ns)
-PARTITION BY toYYYYMM(date);
+PARTITION BY date
+TTL date + INTERVAL 7 DAY DELETE;
 
 CREATE MATERIALIZED VIEW bmp.sessions_mv TO bmp.sessions AS
 SELECT
@@ -311,11 +375,11 @@ SELECT
     routerPort AS router_port,
     synthetic,
 
-    CAST(messageType, 'Enum8(\'initiation\' = 4, \'termination\' = 5)') AS event,
+    CAST(messageType, 'Enum16(\'initiation\' = 4, \'termination\' = 5, \'collector_start\' = 255)') AS event,
     termination.reason AS termination_reason,
     if(messageType = 4, initiation.information, termination.information) AS information
 FROM bmp.from_kafka
-WHERE messageType IN (4, 5);
+WHERE messageType IN (4, 5, 255);
 
 -- Statistics Reports: one row per counter
 CREATE TABLE bmp.stats

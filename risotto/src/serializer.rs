@@ -63,7 +63,12 @@ pub fn serialize_event(event: &Event) -> Vec<u8> {
                     &termination.information,
                 );
             }
-            EventBody::RouteMirroring(_) => {}
+            EventBody::EndOfRib(_, eor) => {
+                let mut e = m.reborrow().init_end_of_rib();
+                e.set_afi(eor.afi);
+                e.set_safi(eor.safi);
+            }
+            EventBody::RouteMirroring(_) | EventBody::CollectorStart => {}
         }
     }
 
