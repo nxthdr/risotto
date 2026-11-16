@@ -10,7 +10,6 @@ use tokio::net::lookup_host;
 pub struct AppConfig {
     pub bmp: BMPConfig,
     pub kafka: KafkaConfig,
-    pub curation: CurationConfig,
 }
 
 #[derive(Debug, Clone)]
@@ -30,15 +29,7 @@ pub struct KafkaConfig {
     pub message_max_bytes: usize,
     pub message_timeout_ms: usize,
     pub batch_wait_time: u64,
-    pub batch_wait_interval: u64,
     pub mpsc_buffer_size: usize,
-}
-
-#[derive(Debug, Clone)]
-pub struct CurationConfig {
-    pub enabled: bool,
-    pub state_path: String,
-    pub state_save_interval: u64,
 }
 
 #[derive(Parser, Debug)]
@@ -57,7 +48,7 @@ pub struct Cli {
     pub kafka_disable: bool,
 
     /// Kafka producer topic
-    #[arg(long, default_value = "risotto-updates")]
+    #[arg(long, default_value = "risotto")]
     pub kafka_topic: String,
 
     /// Kafka Authentication Protocol (e.g., PLAINTEXT, SASL_PLAINTEXT)
@@ -88,10 +79,6 @@ pub struct Cli {
     #[arg(long, default_value_t = 1000)]
     pub kafka_batch_wait_time: u64,
 
-    /// Kafka producer batch wait interval (ms)
-    #[arg(long, default_value_t = 100)]
-    pub kafka_batch_wait_interval: u64,
-
     /// Kafka MPSC bufer size
     #[arg(long, default_value_t = 100000)]
     pub kafka_mpsc_buffer_size: usize,
@@ -99,19 +86,6 @@ pub struct Cli {
     /// Metrics listener address (IP or FQDN) for Prometheus endpoint
     #[arg(long, default_value = "0.0.0.0:8080")]
     pub metrics_address: String,
-
-    /// Disable curation (deduplication and synthetic withdraws)
-    /// When disabled, all BMP updates are forwarded as-is without state tracking
-    #[arg(long)]
-    pub curation_disable: bool,
-
-    /// Path to save curation state file
-    #[arg(long, default_value = "state.bin")]
-    pub curation_state_path: String,
-
-    /// Interval (in seconds) to save curation state to disk
-    #[arg(long, default_value_t = 10)]
-    pub curation_state_interval: u64,
 
     /// Set the verbosity level
     #[command(flatten)]
@@ -143,14 +117,8 @@ fn set_metrics(metrics_address: SocketAddr) {
         "Total number of Kafka messages produced"
     );
 
-    // State metrics
-    metrics::describe_counter!("risotto_state_dump_total", "Total number of state dumps");
-    metrics::describe_counter!(
-        "risotto_state_dump_duration_seconds",
-        "Duration of state dump in seconds"
-    );
+    // Session metrics
     metrics::describe_gauge!("risotto_peer_established", "Peer established for a router");
-    metrics::describe_gauge!("risotto_state_updates", "Number of updates in the state");
 
     // Statistics metrics
     metrics::describe_counter!(
@@ -158,12 +126,12 @@ fn set_metrics(metrics_address: SocketAddr) {
         "Total number of BMP messages received"
     );
     metrics::describe_counter!(
-        "risotto_rx_updates_total",
-        "Total number of updates received"
+        "risotto_bmp_decode_errors_total",
+        "Total number of BMP messages that could not be decoded"
     );
     metrics::describe_counter!(
-        "risotto_tx_updates_total",
-        "Total number of updates transmitted"
+        "risotto_rx_updates_total",
+        "Total number of prefix updates received (one per prefix of a Route Monitoring message)"
     );
 }
 
@@ -215,13 +183,7 @@ pub async fn configure() -> Result<AppConfig> {
             message_max_bytes: cli.kafka_message_max_bytes,
             message_timeout_ms: cli.kafka_message_timeout_ms,
             batch_wait_time: cli.kafka_batch_wait_time,
-            batch_wait_interval: cli.kafka_batch_wait_interval,
             mpsc_buffer_size: cli.kafka_mpsc_buffer_size,
-        },
-        curation: CurationConfig {
-            enabled: !cli.curation_disable,
-            state_path: cli.curation_state_path,
-            state_save_interval: cli.curation_state_interval,
         },
     })
 }

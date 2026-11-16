@@ -1,65 +1,54 @@
 mod bmp;
 mod config;
+mod message_capnp;
 mod producer;
 mod serializer;
-mod state;
-mod update_capnp;
 
 use anyhow::Result;
+use chrono::Utc;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
-use tokio_graceful::Shutdown;
-use tracing::{debug, error, trace};
+use tokio_graceful::{Shutdown, ShutdownGuard};
+use tracing::{debug, error, info, trace};
 
-use risotto_lib::state::{new_state, AsyncState};
-use risotto_lib::state_store::memory::MemoryStore;
-use risotto_lib::state_store::store::StateStore;
-use risotto_lib::update::Update;
+use risotto_lib::event::Event;
 
 use crate::config::{configure, AppConfig};
 
-async fn bmp_handler<T: StateStore>(
-    state: Option<AsyncState<T>>,
-    cfg: Arc<AppConfig>,
-    tx: Sender<Update>,
-) {
-    let bmp_config = cfg.bmp.clone();
+/// Maximum time to close the BMP sessions and flush the events on shutdown.
+const SHUTDOWN_LIMIT: Duration = Duration::from_secs(8);
 
-    debug!("binding bmp listener to {}", bmp_config.host);
-    let bmp_listener = TcpListener::bind(bmp_config.host).await.unwrap();
-
+async fn bmp_handler(listener: TcpListener, tx: Sender<Event>, guard: ShutdownGuard) {
     loop {
-        let (mut bmp_stream, _) = bmp_listener.accept().await.unwrap();
-        let bmp_state = state.clone();
+        let (mut bmp_stream, _) = tokio::select! {
+            connection = listener.accept() => match connection {
+                Ok(connection) => connection,
+                Err(err) => {
+                    error!("Error accepting BMP connection: {}", err);
+                    continue;
+                }
+            },
+            // Stop accepting connections; open sessions close themselves
+            _ = guard.cancelled() => return,
+        };
         let tx = tx.clone();
 
-        // Spawn a new task for the BMP connection with TCP stream
-        tokio::spawn(async move {
-            if let Err(err) = bmp::handle(&mut bmp_stream, bmp_state, tx).await {
+        // Each connection holds a shutdown guard, so that the collector waits for
+        // its synthetic Termination to be emitted before exiting
+        guard.spawn_task_fn(move |guard| async move {
+            if let Err(err) = bmp::handle(&mut bmp_stream, tx, guard).await {
                 error!("Error handling BMP connection: {}", err);
             }
-
-            drop(bmp_stream);
         });
     }
 }
 
-async fn producer_handler(cfg: Arc<AppConfig>, rx: Receiver<Update>) {
+async fn producer_handler(cfg: Arc<AppConfig>, rx: Receiver<Event>) {
     let kafka_config = cfg.kafka.clone();
     if let Err(err) = producer::handle(&kafka_config, rx).await {
         error!("Error handling Kafka producer: {}", err);
-    }
-}
-
-async fn curation_state_handler<T: StateStore + serde::Serialize>(
-    state: AsyncState<T>,
-    cfg: Arc<AppConfig>,
-) {
-    let curation_config = cfg.curation.clone();
-    if let Err(err) = state::dump_handler(state.clone(), curation_config).await {
-        error!("Error dumping curation state: {}", err);
     }
 }
 
@@ -68,33 +57,31 @@ async fn main() -> Result<()> {
     let cfg = Arc::new(configure().await?);
     trace!("{:?}", cfg);
 
-    let curation_config = cfg.curation.clone();
+    // Shut down gracefully on SIGINT and SIGTERM
     let shutdown: Shutdown = Shutdown::default();
-
-    // Initialize curation state if enabled
-    let state = if curation_config.enabled {
-        debug!("curation is enabled");
-        let store = MemoryStore::new();
-        let state = new_state(store);
-        state::load(state.clone(), curation_config.clone()).await;
-        shutdown.spawn_task(curation_state_handler(state.clone(), cfg.clone()));
-        Some(state)
-    } else {
-        debug!("curation is disabled - forwarding all updates as-is");
-        None
-    };
 
     // Initialize MPSC channel to communicate between BMP tasks and producer task
     let (tx, rx) = channel(cfg.kafka.mpsc_buffer_size);
 
-    // Initialize tasks
-    let bmp_task = shutdown.spawn_task(bmp_handler(state.clone(), cfg.clone(), tx.clone()));
-    let producer_task = shutdown.spawn_task(producer_handler(cfg.clone(), rx));
+    // The producer runs until every sender is dropped, i.e. until every BMP
+    // session has been closed, then flushes the remaining events
+    let mut producer_task = shutdown.spawn_task(producer_handler(cfg.clone(), rx));
+
+    debug!("binding bmp listener to {}", cfg.bmp.host);
+    let listener = TcpListener::bind(cfg.bmp.host).await?;
+
+    // Sessions established before this point (by a previous run) are over
+    tx.send(risotto_lib::collector_start(Utc::now())).await?;
+
+    shutdown.spawn_task_fn(move |guard| bmp_handler(listener, tx, guard));
+
     tokio::select! {
-        biased;
-        _ = shutdown.shutdown_with_limit(Duration::from_secs(1)) => {}
-        _ = bmp_task => {}
-        _ = producer_task => {}
+        result = shutdown.shutdown_with_limit(SHUTDOWN_LIMIT) => match result {
+            Ok(elapsed) => info!("shutdown completed in {:?}", elapsed),
+            Err(err) => error!("shutdown did not complete: {}", err),
+        },
+        // The producer stopped on its own (e.g. invalid Kafka configuration)
+        _ = &mut producer_task => {}
     }
 
     Ok(())

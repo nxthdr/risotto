@@ -28,24 +28,20 @@ docker run \
 By default, Risotto listens on port `4000` for BMP messages.
 Additionally, a Prometheus HTTP endpoint is available at `http://localhost:8080/metrics` to monitor the collector's performance and statistics.
 
-## Data Curation
+## Data Model
 
-Risotto maintains a state representing connected routers and their associated BGP peers and announced prefixes. This state is dumped to a file at specified intervals.
-This state addresses two challenges when handling BMP data:
-- **Duplicate announcements** from BMP session resets, where the router resends all active prefixes to the collector after a restart or connectivity issue.
-- **Missing withdraws** that occur when a BGP session goes down and the router is implemented not to send the withdraws messages, or when the collector experiences downtime. These scenarios can result in stale or inaccurate BGP state in downstream systems.
+Risotto is stateless: it decodes each BMP message ([RFC 7854](https://datatracker.ietf.org/doc/html/rfc7854)) and publishes it to Kafka, without deduplicating or curating anything. Every message type is forwarded (Route Monitoring, Peer Up, Peer Down, Initiation, Termination and Statistics Report), so downstream consumers can reconstruct routing state themselves, for instance in the database.
 
-Risotto checks each incoming update against its state. If the prefix is already present, the update is not sent downstream. Missing withdraws are generated synthetically when receiving Peer Down notifications, if the withdraws have not been sent by the router, by using the prefixes stored in the state for this router and downed peer.
+All messages are published to a single Kafka topic, using the [`message.capnp`](./risotto/schemas/message.capnp) Cap'n Proto schema: each message carries common fields (router, session, message type) and the body of its type. Route Monitoring messages are flattened into one message per prefix.
 
-When the collector restarts, Risotto infers any missing withdraws from the initial Peer Up sequence, ensuring the database remains accurate despite downtime. However, any announcements received after the last saved state may be replayed. In short, Risotto guarantees a consistent database state, though it may contain some duplicate announcements following a restart.
+A few fields help consumers make sense of the stream:
 
-Conversely, Risotto can be configured to stream updates to the event pipeline as is by disabling the state usage.
+- **Session**: a BMP session (one TCP connection from a router) is identified by the router address, router port and `sessionStartNs`. Within a session, `sequence` numbers every message from 0: a gap means messages were lost between Risotto and the consumer.
+- **Synthetic Termination**: when a session ends without a Termination message, Risotto emits a Termination with `synthetic = true` and a string TLV giving the cause: `connection closed` (router crash, network failure) or `collector shutdown` (Risotto restart or upgrade), so that consumers know the session ended.
+- **Collector start**: when it starts, Risotto emits a `CollectorStart` message (type 255, not part of BMP): sessions established before it are over, even if no Termination was recorded because Risotto crashed. The end of a session is a loss of observability, not a Peer Down: the router's BGP sessions may still be up, and only Peer Down messages withdraw a peer's routes ([RFC 7854, section 4.9](https://datatracker.ietf.org/doc/html/rfc7854#section-4.9)).
+- **Initial dump**: after a Peer Up, routers dump their whole table, then send an End-of-RIB marker ([RFC 4724](https://datatracker.ietf.org/doc/html/rfc4724)) per RIB view and address family. Updates received before the End-of-RIB are flagged with `initialDump = true`: they are not routing changes, and can be filtered out to study BGP dynamics. End-of-RIB markers are forwarded as Route Monitoring messages with an `endOfRib` body (address family), so that consumers know when a table dump is complete.
 
-## Decoupling Collection from Curation
-
-The Risotto application couples collection (parsing BMP messages) and curation (deduplication, synthetic withdraws) together for simplicity. Of course, you can disable curation to use the app as a stateless collector.
-
-Moreover, the library is designed to facilitate decoupling these two concerns, allowing you to design your data processing pipeline as needed. This enables you to build separate applications, a collector and a curator, using your own serialization format, state store implementation, and streaming platform.
+The library (`risotto-lib`) exposes the same model: `BmpSession` decodes the raw messages of a BMP session into `Event`s, which you can serialize and route as you wish.
 
 ## Contributing
 

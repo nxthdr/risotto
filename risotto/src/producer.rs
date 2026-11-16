@@ -3,48 +3,58 @@ use metrics::counter;
 use rdkafka::config::ClientConfig;
 use rdkafka::message::OwnedHeaders;
 use rdkafka::producer::{FutureProducer, FutureRecord};
-use risotto_lib::update::Update;
 use std::time::Duration;
 use tokio::sync::mpsc::Receiver;
 use tracing::{debug, error, trace};
 
+use risotto_lib::event::Event;
+
 use crate::config::KafkaConfig;
-use crate::serializer::serialize_update;
+use crate::serializer::serialize_event;
 
-#[derive(Clone)]
-pub struct SaslAuth {
-    pub username: String,
-    pub password: String,
-    pub mechanism: String,
-}
-
-#[derive(Clone)]
-pub enum KafkaAuth {
-    SasalPlainText(SaslAuth),
-    PlainText,
-}
-
-pub async fn handle(config: &KafkaConfig, mut rx: Receiver<Update>) -> Result<()> {
-    // Configure Kafka authentication
-    let kafka_auth = match config.auth_protocol.as_str() {
-        "PLAINTEXT" => KafkaAuth::PlainText,
-        "SASL_PLAINTEXT" => KafkaAuth::SasalPlainText(SaslAuth {
-            username: config.auth_sasl_username.clone(),
-            password: config.auth_sasl_password.clone(),
-            mechanism: config.auth_sasl_mechanism.clone(),
-        }),
-        _ => {
-            anyhow::bail!("invalid Kafka producer authentication protocol");
-        }
-    };
-
+pub async fn handle(config: &KafkaConfig, mut rx: Receiver<Event>) -> Result<()> {
     if config.disable {
         debug!("producer disabled");
-        while let Some(_update) = rx.recv().await {
+        while rx.recv().await.is_some() {
             // Just consume and drop
         }
+        return Ok(());
     }
 
+    let producer = new_producer(config)?;
+
+    // Events are serialized and concatenated into Kafka messages of at most
+    // `message_max_bytes`, flushed at least every `batch_wait_time` milliseconds.
+    let mut batch: Vec<u8> = Vec::new();
+    let mut n_events = 0;
+    let mut flush_interval = tokio::time::interval(Duration::from_millis(config.batch_wait_time));
+    flush_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+
+    loop {
+        tokio::select! {
+            event = rx.recv() => {
+                let Some(event) = event else {
+                    // All senders are gone: flush what is left and stop
+                    send(&producer, config, &mut batch, &mut n_events).await;
+                    return Ok(());
+                };
+                trace!("{:?}", event);
+
+                let message = serialize_event(&event);
+                if !batch.is_empty() && batch.len() + message.len() > config.message_max_bytes {
+                    send(&producer, config, &mut batch, &mut n_events).await;
+                }
+                batch.extend_from_slice(&message);
+                n_events += 1;
+            }
+            _ = flush_interval.tick() => {
+                send(&producer, config, &mut batch, &mut n_events).await;
+            }
+        }
+    }
+}
+
+fn new_producer(config: &KafkaConfig) -> Result<FutureProducer> {
     let kafka_brokers = config
         .brokers
         .iter()
@@ -56,96 +66,62 @@ pub async fn handle(config: &KafkaConfig, mut rx: Receiver<Update>) -> Result<()
         kafka_brokers
     );
 
-    // Configure Kafka producer
     let mut client_config = ClientConfig::new();
     client_config
         .set("bootstrap.servers", kafka_brokers)
         .set("message.timeout.ms", config.message_timeout_ms.to_string());
 
-    if let KafkaAuth::SasalPlainText(auth) = kafka_auth {
-        client_config = client_config
-            .set("sasl.username", auth.username)
-            .set("sasl.password", auth.password)
-            .set("sasl.mechanisms", auth.mechanism)
-            .set("security.protocol", "SASL_PLAINTEXT")
-            .to_owned();
+    match config.auth_protocol.as_str() {
+        "PLAINTEXT" => {}
+        "SASL_PLAINTEXT" => {
+            client_config
+                .set("sasl.username", &config.auth_sasl_username)
+                .set("sasl.password", &config.auth_sasl_password)
+                .set("sasl.mechanisms", &config.auth_sasl_mechanism)
+                .set("security.protocol", "SASL_PLAINTEXT");
+        }
+        _ => anyhow::bail!("invalid Kafka producer authentication protocol"),
     }
 
-    let producer: FutureProducer = client_config
-        .create()
-        .expect("Failed to create Kafka producer");
+    Ok(client_config.create()?)
+}
 
-    // Send to Kafka
-    let mut additional_message: Option<Vec<u8>> = None;
-    loop {
-        let start_time = std::time::Instant::now();
-        let mut final_message = Vec::new();
-        let mut n_messages = 0;
+async fn send(
+    producer: &FutureProducer,
+    config: &KafkaConfig,
+    batch: &mut Vec<u8>,
+    n_events: &mut usize,
+) {
+    if batch.is_empty() {
+        return;
+    }
 
-        // Send the additional message first
-        if let Some(message) = additional_message {
-            final_message.extend_from_slice(&message);
-            n_messages += 1;
-            additional_message = None;
+    debug!("sending {} events to Kafka", n_events);
+    let delivery_status = producer
+        .send(
+            FutureRecord::to(config.topic.as_str())
+                .payload(batch.as_slice())
+                .key("")
+                .headers(OwnedHeaders::new()),
+            Duration::from_secs(0),
+        )
+        .await;
+
+    let metric_name = "risotto_kafka_messages_total";
+    match delivery_status {
+        Ok(delivery) => {
+            counter!(metric_name, "status" => "success").increment(1);
+            debug!(
+                "successfully sent message to partition {} at offset {}",
+                delivery.partition, delivery.offset
+            );
         }
-
-        loop {
-            if std::time::Instant::now().duration_since(start_time)
-                > std::time::Duration::from_millis(config.batch_wait_time)
-            {
-                break;
-            }
-
-            let message = rx.try_recv();
-            if message.is_err() {
-                tokio::time::sleep(Duration::from_millis(config.batch_wait_interval)).await;
-                continue;
-            }
-
-            let message = message.unwrap();
-            trace!("{:?}", message);
-
-            // Serialize the update
-            let message = serialize_update(&message);
-
-            // Max message size is 1048576 bytes (including headers)
-            if final_message.len() + message.len() > config.message_max_bytes {
-                additional_message = Some(message);
-                break;
-            }
-
-            final_message.extend_from_slice(&message);
-            n_messages += 1;
-        }
-
-        if final_message.is_empty() {
-            continue;
-        }
-
-        debug!("sending {} updates to Kafka", n_messages);
-        let delivery_status = producer
-            .send(
-                FutureRecord::to(config.topic.as_str())
-                    .payload(&final_message)
-                    .key("")
-                    .headers(OwnedHeaders::new()),
-                Duration::from_secs(0),
-            )
-            .await;
-
-        let metric_name = "risotto_kafka_messages_total";
-        match delivery_status {
-            Ok(delivery) => {
-                counter!(metric_name, "status" => "success").increment(1);
-                debug!(
-                    "successfully sent message to partition {} at offset {}",
-                    delivery.partition, delivery.offset
-                );
-            }
-            Err((error, _)) => {
-                counter!(metric_name, "status" => "failure").increment(1);
-                error!("failed to send message: {}", error);
-            }
+        Err((error, _)) => {
+            counter!(metric_name, "status" => "failure").increment(1);
+            error!("failed to send message: {}", error);
         }
     }
+
+    batch.clear();
+    *n_events = 0;
 }

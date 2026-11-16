@@ -26,7 +26,9 @@ services:
 
   # Bird
   bird30:
-    image: ghcr.io/nxthdr/bird:2.18-adj-rib-out
+    # BIRD 3.3.3, the version deployed by the infrastructure: the first BIRD 3
+    # release exporting BMP pre/post-policy Adj-RIB-In correctly
+    image: ghcr.io/nxthdr/bird:3.3.3
     volumes:
       - ./config/bird/bird30.conf:/etc/bird/bird.conf:ro
     networks:
@@ -36,7 +38,7 @@ services:
       - risotto
 
   bird40:
-    image: ghcr.io/nxthdr/bird:2.18-adj-rib-out
+    image: ghcr.io/nxthdr/bird:3.3.3
     volumes:
       - ./config/bird/bird40.conf:/etc/bird/bird.conf:ro
     networks:
@@ -48,7 +50,7 @@ services:
   # Pipeline
   risotto:
     build: ..
-    command: -v --kafka-brokers=10.0.0.100:9092 --curation-state-path=/app/state.bin
+    command: -v --kafka-brokers=10.0.0.100:9092
     ports:
       - "8080:8080"
     networks:
@@ -67,7 +69,7 @@ services:
         ipv4_address: 10.0.0.100
 
   clickhouse:
-    image: clickhouse/clickhouse-server:latest
+    image: clickhouse/clickhouse-server:26.5.1 # version deployed by the infrastructure
     volumes:
       - ./config/clickhouse/docker-entrypoint-initdb.d:/docker-entrypoint-initdb.d
       - ../risotto/schemas:/var/lib/clickhouse/format_schemas
