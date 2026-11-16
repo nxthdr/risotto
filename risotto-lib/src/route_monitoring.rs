@@ -1,139 +1,96 @@
-use bgpkit_parser::bmp::messages::{BmpMessage, PerPeerFlags, RouteMonitoring};
+use bgpkit_parser::bmp::messages::RouteMonitoring as BmpRouteMonitoring;
 use bgpkit_parser::models::*;
-use chrono::{DateTime, TimeZone, Utc};
 use core::net::IpAddr;
-use std::net::{Ipv4Addr, SocketAddr};
-use tracing::warn;
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct UpdateMetadata {
-    pub time_bmp_header_ns: i64,
-    pub router_socket: SocketAddr,
-    pub peer_addr: IpAddr,
-    pub peer_bgp_id: Ipv4Addr,
-    pub peer_asn: u32,
-    pub is_post_policy: bool,
-    pub is_adj_rib_out: bool,
+use crate::event::RouteMonitoring;
+
+// Prefixes outside MP_(UN)REACH_NLRI are IPv4 unicast
+const IPV4_UNICAST: (u16, u8) = (1, 1);
+
+fn family(nlri: &Nlri) -> (u16, u8) {
+    (u16::from(nlri.afi), u8::from(nlri.safi))
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct Update {
-    pub time_received_ns: DateTime<Utc>,
-    pub time_bmp_header_ns: DateTime<Utc>,
-    pub router_addr: IpAddr,
-    pub router_port: u16,
-    pub peer_addr: IpAddr,
-    pub peer_bgp_id: Ipv4Addr,
-    pub peer_asn: u32,
-    pub prefix_addr: IpAddr,
-    pub prefix_len: u8,
-    pub is_post_policy: bool,
-    pub is_adj_rib_out: bool,
-    pub announced: bool,
-    pub synthetic: bool,
-
-    // BGP Attributes
-    pub origin: String,
-    pub as_path: Vec<u32>,
-    pub next_hop: Option<IpAddr>,
-    pub multi_exit_discriminator: Option<u32>,
-    pub local_preference: Option<u32>,
-    pub only_to_customer: Option<u32>,
-    pub atomic_aggregate: bool,
-    pub aggregator_asn: Option<u32>,
-    pub aggregator_bgp_id: Option<u32>,
-    pub communities: Vec<(u32, u16)>,
-    pub extended_communities: Vec<(u8, u8, Vec<u8>)>, // (type_high, type_low, value)
-    pub large_communities: Vec<(u32, u32, u32)>,      // (global_admin, local_data1, local_data2)
-    pub originator_id: Option<u32>,
-    pub cluster_list: Vec<u32>,
-    pub mp_reach_afi: Option<u16>,
-    pub mp_reach_safi: Option<u8>,
-    pub mp_unreach_afi: Option<u16>,
-    pub mp_unreach_safi: Option<u8>,
-}
-
-impl Update {
-    /// Generate a partition key for streaming pipelines based on router and peer
-    /// This ensures all updates for the same router/peer combination
-    /// are routed to the same partition for ordered processing
-    pub fn partition_key(&self) -> String {
-        format!("{}:{}", self.router_addr, self.peer_addr)
+/// Address family (AFI, SAFI) of an End-of-RIB marker (RFC 4724),
+/// or `None` if the message is not an End-of-RIB.
+pub fn end_of_rib_family(message: &BmpRouteMonitoring) -> Option<(u16, u8)> {
+    let BgpMessage::Update(bgp_update) = &message.bgp_message else {
+        return None;
+    };
+    if !bgp_update.is_end_of_rib() {
+        return None;
     }
+    // IPv4 unicast End-of-RIB is an empty UPDATE; other families use an empty MP_UNREACH_NLRI
+    Some(
+        bgp_update
+            .attributes
+            .get_unreachable_nlri()
+            .map(family)
+            .unwrap_or(IPV4_UNICAST),
+    )
 }
 
-pub fn decode_updates(message: RouteMonitoring, metadata: UpdateMetadata) -> Option<Vec<Update>> {
+/// Flatten a BMP Route Monitoring message into one [`RouteMonitoring`] per prefix.
+/// Returns an empty vector for non-UPDATE messages and End-of-RIB markers.
+pub fn decode_route_monitoring(message: BmpRouteMonitoring) -> Vec<RouteMonitoring> {
     let bgp_update = match message.bgp_message {
-        bgpkit_parser::models::BgpMessage::Update(update) => update,
-        _ => return None,
+        BgpMessage::Update(update) => update,
+        _ => return Vec::new(),
     };
 
-    // Collect all prefixes with their announcement status in one go
-    let prefixes_to_update: Vec<_> = bgp_update
+    let attributes = &bgp_update.attributes;
+    let reachable = attributes.get_reachable_nlri();
+    let unreachable = attributes.get_unreachable_nlri();
+
+    // Next hop: NEXT_HOP attribute for IPv4 unicast NLRI, MP_REACH_NLRI next hop otherwise
+    let next_hop = attributes.next_hop().map(map_to_ipv6);
+    let mp_next_hop = reachable
+        .and_then(|nlri| nlri.next_hop.as_ref())
+        .map(|nh| map_to_ipv6(nh.addr()));
+
+    // (prefix, announced, address family, next hop)
+    type Entry = (NetworkPrefix, bool, (u16, u8), Option<IpAddr>);
+    let prefixes: Vec<Entry> = bgp_update
         .announced_prefixes
-        .into_iter()
-        .map(|p| (p, true))
+        .iter()
+        .map(|p| (*p, true, IPV4_UNICAST, next_hop))
         .chain(
             bgp_update
                 .withdrawn_prefixes
-                .into_iter()
-                .map(|p| (p, false)),
+                .iter()
+                .map(|p| (*p, false, IPV4_UNICAST, None)),
         )
+        .chain(reachable.iter().flat_map(|n| {
+            n.prefixes
+                .iter()
+                .map(move |p| (*p, true, family(n), mp_next_hop))
+        }))
         .chain(
-            bgp_update
-                .attributes
-                .get_reachable_nlri()
-                .map(|nlri| nlri.prefixes.iter().map(|&p| (p, true)))
-                .into_iter()
-                .flatten(),
-        )
-        .chain(
-            bgp_update
-                .attributes
-                .get_unreachable_nlri()
-                .map(|nlri| nlri.prefixes.iter().map(|&p| (p, false)))
-                .into_iter()
-                .flatten(),
+            unreachable
+                .iter()
+                .flat_map(|n| n.prefixes.iter().map(move |p| (*p, false, family(n), None))),
         )
         .collect();
 
-    if prefixes_to_update.is_empty() {
-        return None;
+    if prefixes.is_empty() {
+        return Vec::new();
     }
 
-    // Extract all attributes once
-    let attributes = &bgp_update.attributes;
     let communities: Vec<MetaCommunity> = attributes.iter_communities().collect();
 
-    // Parse timestamp once
-    let time_bmp_header_ns = Utc
-        .timestamp_millis_opt(metadata.time_bmp_header_ns)
-        .single()
-        .unwrap_or_else(|| {
-            warn!(
-                "failed to parse timestamp: {}, using Utc::now()",
-                metadata.time_bmp_header_ns
-            );
-            Utc::now()
-        });
+    // Attributes are shared by every prefix of the UPDATE
+    let base = RouteMonitoring {
+        prefix_addr: IpAddr::V6(std::net::Ipv6Addr::UNSPECIFIED),
+        prefix_len: 0,
+        path_id: None,
+        announced: false,
+        afi: 0,
+        safi: 0,
+        initial_dump: false,
 
-    // Create base update template to avoid repetition
-    let base_update = Update {
-        time_received_ns: Utc::now(),
-        time_bmp_header_ns,
-        router_addr: map_to_ipv6(metadata.router_socket.ip()),
-        router_port: metadata.router_socket.port(),
-        peer_addr: map_to_ipv6(metadata.peer_addr),
-        peer_bgp_id: metadata.peer_bgp_id,
-        peer_asn: metadata.peer_asn,
-        is_post_policy: metadata.is_post_policy,
-        is_adj_rib_out: metadata.is_adj_rib_out,
-        synthetic: false,
-
-        // BGP Attributes - simple types for easy serialization
         origin: attributes.origin().to_string(),
         as_path: new_path(attributes.effective_as_path()),
-        next_hop: attributes.next_hop().map(map_to_ipv6),
+        next_hop: None,
         multi_exit_discriminator: attributes.multi_exit_discriminator(),
         local_preference: attributes.local_preference(),
         only_to_customer: attributes.only_to_customer().map(|asn| asn.to_u32()),
@@ -143,78 +100,29 @@ pub fn decode_updates(message: RouteMonitoring, metadata: UpdateMetadata) -> Opt
         communities: new_communities(&communities),
         extended_communities: extract_extended_communities(&communities),
         large_communities: extract_large_communities(&communities),
-        originator_id: attributes.origin_id().map(|id| u32::from(id)),
+        originator_id: attributes.origin_id().map(u32::from),
         cluster_list: attributes.clusters().map_or_else(Vec::new, |c| c.to_vec()),
-        mp_reach_afi: attributes
-            .get_reachable_nlri()
-            .map(|nlri| u16::from(nlri.afi)),
-        mp_reach_safi: attributes
-            .get_reachable_nlri()
-            .map(|nlri| u8::from(nlri.safi)),
-        mp_unreach_afi: attributes
-            .get_unreachable_nlri()
-            .map(|nlri| u16::from(nlri.afi)),
-        mp_unreach_safi: attributes
-            .get_unreachable_nlri()
-            .map(|nlri| u8::from(nlri.safi)),
-
-        // These will be overridden per prefix
-        prefix_addr: std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED),
-        prefix_len: 0,
-        announced: false,
+        mp_reach_afi: reachable.map(|nlri| u16::from(nlri.afi)),
+        mp_reach_safi: reachable.map(|nlri| u8::from(nlri.safi)),
+        mp_unreach_afi: unreachable.map(|nlri| u16::from(nlri.afi)),
+        mp_unreach_safi: unreachable.map(|nlri| u8::from(nlri.safi)),
     };
 
-    // Generate updates for each prefix
-    let updates = prefixes_to_update
+    prefixes
         .into_iter()
-        .map(|(prefix, announced)| Update {
-            prefix_addr: map_to_ipv6(prefix.prefix.addr()),
-            prefix_len: prefix.prefix.prefix_len(),
-            announced,
-            ..base_update.clone()
-        })
-        .collect();
-
-    Some(updates)
-}
-
-pub fn new_metadata(socket: SocketAddr, message: &BmpMessage) -> Option<UpdateMetadata> {
-    // Get peer information
-    let Some(pph) = message.per_peer_header else {
-        return None;
-    };
-    let peer = Peer::new(pph.peer_bgp_id, pph.peer_ip, pph.peer_asn);
-
-    // Get header information
-    let time_bmp_header_ns = (pph.timestamp * 1000.0) as i64;
-
-    let is_post_policy = match pph.peer_flags {
-        PerPeerFlags::PeerFlags(flags) => flags.is_post_policy(),
-        PerPeerFlags::LocalRibPeerFlags(_) => false,
-    };
-
-    let is_adj_rib_out = match pph.peer_flags {
-        PerPeerFlags::PeerFlags(flags) => flags.is_adj_rib_out(),
-        PerPeerFlags::LocalRibPeerFlags(_) => false,
-    };
-
-    Some(UpdateMetadata {
-        time_bmp_header_ns,
-        router_socket: socket,
-        peer_addr: peer.peer_ip,
-        peer_bgp_id: peer.peer_bgp_id,
-        peer_asn: peer.peer_asn.to_u32(),
-        is_post_policy,
-        is_adj_rib_out,
-    })
-}
-
-pub fn new_peer_from_metadata(metadata: UpdateMetadata) -> Peer {
-    Peer::new(
-        metadata.peer_bgp_id,
-        metadata.peer_addr,
-        Asn::new_32bit(metadata.peer_asn),
-    )
+        .map(
+            |(prefix, announced, (afi, safi), next_hop)| RouteMonitoring {
+                prefix_addr: map_to_ipv6(prefix.prefix.addr()),
+                prefix_len: prefix.prefix.prefix_len(),
+                path_id: prefix.path_id,
+                announced,
+                afi,
+                safi,
+                next_hop,
+                ..base.clone()
+            },
+        )
+        .collect()
 }
 
 pub fn new_path(path: Option<AsPath>) -> Vec<u32> {

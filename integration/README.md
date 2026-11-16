@@ -6,16 +6,16 @@ This setup provides an environment for integration testing of Risotto's BMP mess
 
 *   **BGP Routers:**
     *   Two [GoBGP](https://github.com/osrg/gobgp) instances configured to peer with each other.
-    *   Two [BIRD](https://bird.network.cz/) instances configured to peer and exchange routes with each other.
+    *   Two [BIRD](https://bird.network.cz/) 3.3.3 instances configured to peer and exchange routes with each other, monitoring their pre-policy and post-policy Adj-RIB-In.
 *   **Risotto:** The instance under test, listening for BMP messages.
-*   **Redpanda:** A Kafka instance serving as the message broker for updates produced by Risotto.
+*   **Redpanda:** A Kafka instance serving as the message broker for the BMP messages produced by Risotto.
 *   **ClickHouse:** A database used to consume and store the messages from Redpanda.
 
 **Data Flow:**
 
 1.  All four routers (GoBGP and BIRD) send their BMP messages to the Risotto instance (`10.0.0.100`).
-2.  Risotto processes these BMP messages and produces the resulting updates to a topic in Redpanda.
-3.  ClickHouse uses a table based on the [Kafka engine](https://clickhouse.com/docs/en/engines/table-engines/integrations/kafka) (`bmp.from_kafka`) to read messages from the Redpanda topic. The consumed data is then inserted into a storage table (`bmp.updates`) for analysis and verification.
+2.  Risotto decodes these BMP messages and produces them to the `risotto` topic in Redpanda.
+3.  ClickHouse uses a table based on the [Kafka engine](https://clickhouse.com/docs/en/engines/table-engines/integrations/kafka) (`bmp.from_kafka`) to read messages from the Redpanda topic. Materialized views then dispatch them by message type into `bmp.updates` (Route Monitoring), `bmp.peer_events` (Peer Up and Peer Down), `bmp.sessions` (Initiation and Termination) and `bmp.stats` (Statistics Report).
 
 **Test Scenarios:**
 
@@ -52,6 +52,15 @@ docker exec -ti integration-redpanda-1 rpk group describe clickhouse-risotto-gro
 
 ```sh
 docker exec -ti integration-clickhouse-1 clickhouse-client --query "SELECT * FROM bmp.updates"
+docker exec -ti integration-clickhouse-1 clickhouse-client --query "SELECT * FROM bmp.peer_events"
+docker exec -ti integration-clickhouse-1 clickhouse-client --query "SELECT * FROM bmp.sessions"
+```
+
+* Check the initial table dump is flagged, after restarting Risotto so that routers dump their tables again:
+
+```sh
+docker compose restart risotto
+docker exec -ti integration-clickhouse-1 clickhouse-client --query "SELECT initial_dump, count() FROM bmp.updates GROUP BY initial_dump"
 ```
 
 * Finally, stop the environment:
